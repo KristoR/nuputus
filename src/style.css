@@ -473,6 +473,34 @@ footer.app-footer {
 
 .tents-clue.corner { background: transparent; }
 
+/* ---------- Star battle ---------- */
+.starbattle-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--n), 1fr);
+  width: min(94vw, 460px);
+  aspect-ratio: 1;
+  border: 2px solid var(--ink);
+}
+
+.starbattle-cell {
+  border: 1px solid rgba(43, 41, 36, 0.12);
+  color: var(--ink);
+  font-size: clamp(0.9rem, 4vw, 1.35rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.starbattle-cell.border-top { border-top: 2px solid var(--ink); }
+.starbattle-cell.border-left { border-left: 2px solid var(--ink); }
+.starbattle-cell.border-bottom { border-bottom: 2px solid var(--ink); }
+.starbattle-cell.border-right { border-right: 2px solid var(--ink); }
+.starbattle-cell.empty-mark { color: var(--ink-faint); }
+.starbattle-cell.hint-primary { box-shadow: inset 0 0 0 3px #c98a2b; }
+.starbattle-cell.error { box-shadow: inset 0 0 0 3px var(--bad); }
+
 @media (max-width: 420px) {
   .toolbar button {
     min-width: 68px;
