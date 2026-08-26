@@ -5,13 +5,14 @@ import { renderHome } from './home';
 import { sudokuGame } from './games/sudoku';
 import { tentsGame } from './games/tents';
 import { starBattleGame } from './games/starbattle';
+import { battleshipGame } from './games/battleship';
 import { placeholderGame } from './lib/placeholder';
 
 const games: GameDef[] = [
   sudokuGame,
   tentsGame,
   starBattleGame,
-  placeholderGame('battleship', 'Laevade pommitamine', '🚢', 'Leia peidetud laevastik loogika abil.'),
+  battleshipGame,
   placeholderGame('slitherlink', 'Hiina müür', '🧱', 'Tõmba jooned nii, et tekiks üks terviklik müür.'),
 ];
 

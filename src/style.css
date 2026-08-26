@@ -501,6 +501,76 @@ footer.app-footer {
 .starbattle-cell.hint-primary { box-shadow: inset 0 0 0 3px #c98a2b; }
 .starbattle-cell.error { box-shadow: inset 0 0 0 3px var(--bad); }
 
+/* ---------- Battleship ---------- */
+.fleet-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-family: system-ui, sans-serif;
+  font-size: 0.82rem;
+  color: var(--ink-dim);
+}
+
+.fleet-item {
+  background: var(--paper-card);
+  border: 1px solid var(--paper-line);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+}
+
+.battleship-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--n), 1fr);
+  width: min(94vw, 480px);
+  aspect-ratio: var(--n);
+  border: 2px solid var(--ink);
+}
+
+.battleship-cell {
+  background: #eaf1f5;
+  border: 1px solid var(--paper-line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8%;
+  line-height: 1;
+}
+
+.battleship-cell.given { background: #e0ecf2; }
+.battleship-cell.hint-primary { box-shadow: inset 0 0 0 3px #c98a2b; }
+.battleship-cell.error { box-shadow: inset 0 0 0 3px var(--bad); }
+
+.ship-piece {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--ink);
+}
+
+.ship-single { border-radius: 50%; }
+.ship-h-left { border-radius: 50% 0 0 50%; }
+.ship-h-mid { border-radius: 0; }
+.ship-h-right { border-radius: 0 50% 50% 0; }
+.ship-v-top { border-radius: 50% 50% 0 0; }
+.ship-v-mid { border-radius: 0; }
+.ship-v-bottom { border-radius: 0 0 50% 50%; }
+
+.water-mark {
+  color: #7896a3;
+  font-size: clamp(0.7rem, 3vw, 1rem);
+}
+
+.battleship-clue {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(0.8rem, 3.2vw, 1.05rem);
+  color: var(--ink-dim);
+  font-family: system-ui, sans-serif;
+}
+
+.battleship-clue.corner { background: transparent; }
+
 @media (max-width: 420px) {
   .toolbar button {
     min-width: 68px;
