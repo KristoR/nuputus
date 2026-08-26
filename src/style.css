@@ -436,6 +436,43 @@ footer.app-footer {
   font-family: system-ui, sans-serif;
 }
 
+/* ---------- Tents ---------- */
+.tents-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--n), 1fr);
+  width: min(94vw, 480px);
+  aspect-ratio: var(--n);
+  border: 2px solid var(--ink);
+}
+
+.tents-cell {
+  background: var(--paper-card);
+  border: 1px solid var(--paper-line);
+  color: var(--ink);
+  font-size: clamp(0.85rem, 3.6vw, 1.3rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.tents-cell.tree { background: #eef1e6; }
+.tents-cell.grass { color: var(--ink-faint); }
+.tents-cell.hint-primary { background: #fce8b8; }
+.tents-cell.error { background: var(--bad-soft); }
+
+.tents-clue {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(0.8rem, 3.2vw, 1.05rem);
+  color: var(--ink-dim);
+  font-family: system-ui, sans-serif;
+}
+
+.tents-clue.corner { background: transparent; }
+
 @media (max-width: 420px) {
   .toolbar button {
     min-width: 68px;

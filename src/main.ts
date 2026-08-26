@@ -3,11 +3,12 @@ import { el, clear } from './lib/dom';
 import type { GameDef } from './lib/types';
 import { renderHome } from './home';
 import { sudokuGame } from './games/sudoku';
+import { tentsGame } from './games/tents';
 import { placeholderGame } from './lib/placeholder';
 
 const games: GameDef[] = [
   sudokuGame,
-  placeholderGame('tents', 'Telklaager', '⛺', 'Aseta telgid puude kõrvale — igas reas ja veerus täpne kogus.'),
+  tentsGame,
   placeholderGame('starbattle', 'Tähesõda', '⭐', 'Paiguta tähed nii, et need üksteist ei puutuks.'),
   placeholderGame('battleship', 'Laevade pommitamine', '🚢', 'Leia peidetud laevastik loogika abil.'),
   placeholderGame('slitherlink', 'Hiina müür', '🧱', 'Tõmba jooned nii, et tekiks üks terviklik müür.'),
