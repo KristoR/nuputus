@@ -6,14 +6,14 @@ import { sudokuGame } from './games/sudoku';
 import { tentsGame } from './games/tents';
 import { starBattleGame } from './games/starbattle';
 import { battleshipGame } from './games/battleship';
-import { placeholderGame } from './lib/placeholder';
+import { slitherlinkGame } from './games/slitherlink';
 
 const games: GameDef[] = [
   sudokuGame,
   tentsGame,
   starBattleGame,
   battleshipGame,
-  placeholderGame('slitherlink', 'Hiina müür', '🧱', 'Tõmba jooned nii, et tekiks üks terviklik müür.'),
+  slitherlinkGame,
 ];
 
 const app = document.getElementById('app')!;

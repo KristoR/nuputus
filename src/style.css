@@ -571,6 +571,11 @@ footer.app-footer {
 
 .battleship-clue.corner { background: transparent; }
 
+/* ---------- Slitherlink ---------- */
+.board-wrap svg text {
+  user-select: none;
+}
+
 @media (max-width: 420px) {
   .toolbar button {
     min-width: 68px;
