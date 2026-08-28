@@ -76,7 +76,7 @@ export function renderHintPanel(
   ]);
 }
 
-export function renderMessage(kind: 'success' | 'error', text: string): HTMLElement {
+export function renderMessage(kind: 'success' | 'error' | 'info', text: string): HTMLElement {
   return el('div', { class: `message-banner ${kind}` }, [text]);
 }
 
@@ -85,4 +85,56 @@ export function toolbarButton(label: string, onClick: () => void, disabled = fal
   if (disabled) btn.setAttribute('disabled', 'true');
   btn.addEventListener('click', onClick);
   return btn;
+}
+
+/**
+ * Wires up a cell/edge for two distinct marks instead of one shared cycle:
+ * a tap/left-click for the "primary" mark (star, tent, ship, line, ...) and
+ * a right-click (desktop) or long-press (touch) for the "secondary" mark
+ * (definitely-empty, grass, water, definitely-no-line). This means placing
+ * either mark is always exactly one interaction, never a multi-step cycle.
+ */
+export function attachPrimarySecondary(
+  target: HTMLElement | SVGElement,
+  onPrimary: () => void,
+  onSecondary: () => void,
+): void {
+  let longPressFired = false;
+  let timer: number | undefined;
+
+  const clearTimer = () => {
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      timer = undefined;
+    }
+  };
+
+  target.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    onSecondary();
+  });
+
+  target.addEventListener(
+    'touchstart',
+    () => {
+      longPressFired = false;
+      clearTimer();
+      timer = window.setTimeout(() => {
+        longPressFired = true;
+        onSecondary();
+      }, 450);
+    },
+    { passive: true },
+  );
+  target.addEventListener('touchend', clearTimer);
+  target.addEventListener('touchmove', clearTimer);
+  target.addEventListener('touchcancel', clearTimer);
+
+  target.addEventListener('click', () => {
+    if (longPressFired) {
+      longPressFired = false;
+      return;
+    }
+    onPrimary();
+  });
 }

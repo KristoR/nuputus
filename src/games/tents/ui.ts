@@ -1,6 +1,6 @@
 import { el, clear } from '../../lib/dom';
 import type { Difficulty } from '../../lib/types';
-import { difficultyLabel, renderDifficultyPicker, renderHintPanel, renderMessage, toolbarButton } from '../../lib/ui-helpers';
+import { attachPrimarySecondary, difficultyLabel, renderDifficultyPicker, renderHintPanel, renderMessage, toolbarButton } from '../../lib/ui-helpers';
 import { GRASS, TENT, UNKNOWN, emptyPlay, type PlayState } from './core';
 import { generateTents } from './generate';
 import { getTentsHint, type TentsDeduction } from './hints';
@@ -8,7 +8,7 @@ import { getTentsHint, type TentsDeduction } from './hints';
 const RULES_HTML = `
   <p><strong>Eesmärk:</strong> aseta igale puule 🌲 üks telk ⛺ vahetult kõrvalasuvasse (mitte diagonaalses) ruutu.</p>
   <p>Telgid ei tohi omavahel kokku puutuda, ka mitte nurgapidi. Numbrid rea lõpus ja veeru all näitavad, mitu telki peab seal olema.</p>
-  <p>Puuduta ruutu, et selle olek muutuks: tühi → telk → rohi → tühi. Kasuta <strong>Vihjet</strong>, kui jääd kinni.</p>
+  <p>Puuduta ruutu, et sinna tuleks telk. Hoia all (või paremklõpsa hiirega), et märkida ruut kindlasti rohuks. Kasuta <strong>Vihjet</strong>, kui jääd kinni.</p>
 `;
 
 export function mountTents(container: HTMLElement, setTitle: (t: string) => void): () => void {
@@ -35,6 +35,7 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
     const state: PlayState = emptyPlay(n);
     let hint: TentsDeduction | null = null;
     let errorCells = new Set<string>();
+    let checkedOk = false;
     let solved = false;
 
     const toolbar = el('div', { class: 'toolbar' });
@@ -42,6 +43,7 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
     const boardWrap = el('div', { class: 'board-wrap' });
     const hintHost = el('div', {});
     const messageHost = el('div', {});
+    const cellEls: HTMLButtonElement[][] = [];
 
     function tentsPlaced(): number {
       return state.flat().filter((v) => v === TENT).length;
@@ -53,24 +55,35 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
       statusLine.append(el('span', {}, [`${difficultyLabel(difficulty)} · ${tentsPlaced()}/${total} telki`]));
     }
 
-    function cycle(r: number, c: number) {
+    function setCell(r: number, c: number, value: number) {
       if (trees[r][c] || solved) return;
-      const cur = state[r][c];
-      state[r][c] = cur === UNKNOWN ? TENT : cur === TENT ? GRASS : UNKNOWN;
+      state[r][c] = value;
       errorCells = new Set();
+      checkedOk = false;
       hint = null;
       checkSolved();
-      renderAll();
+      updateAllCells();
+      renderStatus();
+      renderHintHost();
+      renderMessages();
     }
 
+    function togglePrimary(r: number, c: number) {
+      setCell(r, c, state[r][c] === TENT ? UNKNOWN : TENT);
+    }
+
+    function toggleSecondary(r: number, c: number) {
+      setCell(r, c, state[r][c] === GRASS ? UNKNOWN : GRASS);
+    }
+
+    /** Solved once every tent matches the solution — grass marks are just an optional aid. */
     function checkSolved() {
-      const complete = state.every((row, r) => row.every((v, c) => (trees[r][c] ? true : v !== UNKNOWN)));
-      if (!complete) return;
-      const ok = state.every((row, r) => row.every((v, c) => trees[r][c] || v === solution[r][c]));
+      const ok = state.every((row, r) => row.every((v, c) => trees[r][c] || (v === TENT) === (solution[r][c] === TENT)));
       if (ok) solved = true;
     }
 
     function checkBoard() {
+      checkSolved();
       const bad = new Set<string>();
       for (let r = 0; r < n; r++) {
         for (let c = 0; c < n; c++) {
@@ -80,13 +93,16 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
         }
       }
       errorCells = bad;
-      renderAll();
+      checkedOk = bad.size === 0 && !solved;
+      updateAllCells();
+      renderMessages();
     }
 
     function showHint() {
       if (solved) return;
       hint = getTentsHint(puzzle, state);
-      renderAll();
+      updateAllCells();
+      renderHintHost();
     }
 
     function applyHint() {
@@ -94,8 +110,12 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
       for (const a of hint.assignments) state[a.r][a.c] = a.value;
       hint = null;
       errorCells = new Set();
+      checkedOk = false;
       checkSolved();
-      renderAll();
+      updateAllCells();
+      renderStatus();
+      renderHintHost();
+      renderMessages();
     }
 
     function glyphFor(r: number, c: number): string {
@@ -106,37 +126,54 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
       return '';
     }
 
-    function renderBoard() {
+    function updateCell(r: number, c: number) {
+      const key = `${r},${c}`;
+      const classes = ['tents-cell'];
+      if (trees[r][c]) classes.push('tree');
+      if (state[r][c] === TENT) classes.push('tent');
+      if (state[r][c] === GRASS) classes.push('grass');
+      if (hint?.assignments.some((a) => a.r === r && a.c === c)) classes.push('hint-primary');
+      if (errorCells.has(key)) classes.push('error');
+      const cell = cellEls[r][c];
+      cell.className = classes.join(' ');
+      cell.textContent = glyphFor(r, c);
+    }
+
+    function updateAllCells() {
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) updateCell(r, c);
+    }
+
+    function buildBoard() {
       clear(boardWrap);
       const grid = el('div', { class: 'tents-grid' });
       grid.style.setProperty('--n', String(n + 1));
       for (let r = 0; r < n; r++) {
+        cellEls[r] = [];
         for (let c = 0; c < n; c++) {
-          const key = `${r},${c}`;
-          const classes = ['tents-cell'];
-          if (trees[r][c]) classes.push('tree');
-          if (state[r][c] === TENT) classes.push('tent');
-          if (state[r][c] === GRASS) classes.push('grass');
-          if (hint?.assignments.some((a) => a.r === r && a.c === c)) classes.push('hint-primary');
-          if (errorCells.has(key)) classes.push('error');
-          const cell = el('button', { class: classes.join(' ') }, [glyphFor(r, c)]);
-          cell.addEventListener('click', () => cycle(r, c));
+          const cell = el('button', { class: 'tents-cell' });
+          attachPrimarySecondary(
+            cell,
+            () => togglePrimary(r, c),
+            () => toggleSecondary(r, c),
+          );
+          cellEls[r][c] = cell;
           grid.append(cell);
         }
-        const rowClueCell = el('div', { class: 'tents-clue' }, [String(rowClue[r])]);
-        grid.append(rowClueCell);
+        grid.append(el('div', { class: 'tents-clue' }, [String(rowClue[r])]));
       }
       for (let c = 0; c < n; c++) {
         grid.append(el('div', { class: 'tents-clue' }, [String(colClue[c])]));
       }
       grid.append(el('div', { class: 'tents-clue corner' }, ['']));
       boardWrap.append(grid);
+      updateAllCells();
     }
 
     function renderMessages() {
       clear(messageHost);
       if (solved) messageHost.append(renderMessage('success', 'Lahendatud! Kõik telgid on õigel kohal.'));
       else if (errorCells.size > 0) messageHost.append(renderMessage('error', 'Mõni märgitud ruut ei klapi lahendusega.'));
+      else if (checkedOk) messageHost.append(renderMessage('info', 'Seni märgitud ruudud on õiged — jätka!'));
     }
 
     function renderHintHost() {
@@ -145,17 +182,11 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
         hintHost.append(
           renderHintPanel({ title: hint.title, explanation: hint.explanation, primary: [], apply: applyHint }, applyHint, () => {
             hint = null;
-            renderAll();
+            updateAllCells();
+            renderHintHost();
           }),
         );
       }
-    }
-
-    function renderAll() {
-      renderStatus();
-      renderBoard();
-      renderHintHost();
-      renderMessages();
     }
 
     clear(root);
@@ -167,7 +198,8 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
     rulesBox.append(rulesBody);
 
     root.append(toolbar, statusLine, boardWrap, hintHost, messageHost, rulesBox);
-    renderAll();
+    buildBoard();
+    renderStatus();
   }
 
   showPicker();
