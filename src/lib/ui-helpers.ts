@@ -109,14 +109,16 @@ export function attachPrimarySecondary(
     }
   };
 
-  target.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    onSecondary();
-  });
-
+  // On Android, an untouched long-press is recognized by the OS/browser at
+  // roughly the same delay as our own timer, which cancels our touch
+  // sequence (a touchcancel) to show its own text-selection/context UI —
+  // that's the haptic buzz firing with no mark actually appearing. Calling
+  // preventDefault on touchstart itself heads that off, leaving our timer
+  // as the only thing driving the long-press.
   target.addEventListener(
     'touchstart',
-    () => {
+    (e) => {
+      e.preventDefault();
       longPressFired = false;
       clearTimer();
       timer = window.setTimeout(() => {
@@ -124,11 +126,23 @@ export function attachPrimarySecondary(
         onSecondary();
       }, 450);
     },
-    { passive: true },
+    { passive: false },
   );
   target.addEventListener('touchend', clearTimer);
   target.addEventListener('touchmove', clearTimer);
   target.addEventListener('touchcancel', clearTimer);
+
+  // Some browsers still dispatch a native contextmenu after a long-press
+  // despite the above; if our own timer just handled it, swallow the
+  // duplicate instead of toggling the mark a second time.
+  target.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (longPressFired) {
+      longPressFired = false;
+      return;
+    }
+    onSecondary();
+  });
 
   target.addEventListener('click', () => {
     if (longPressFired) {

@@ -264,12 +264,20 @@ main {
   display: flex;
   justify-content: center;
   touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.board-wrap button {
+  -webkit-touch-callout: none;
 }
 
 .board-wrap svg {
   max-width: 100%;
   height: auto;
   touch-action: none;
+  -webkit-touch-callout: none;
   user-select: none;
   background: var(--paper-card);
   border-radius: var(--radius-sm);
