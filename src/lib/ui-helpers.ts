@@ -100,7 +100,11 @@ export function attachPrimarySecondary(
   onSecondary: () => void,
 ): void {
   let longPressFired = false;
+  let moved = false;
+  let startX = 0;
+  let startY = 0;
   let timer: number | undefined;
+  const MOVE_TOLERANCE = 10;
 
   const clearTimer = () => {
     if (timer !== undefined) {
@@ -109,18 +113,22 @@ export function attachPrimarySecondary(
     }
   };
 
-  // On Android, an untouched long-press is recognized by the OS/browser at
-  // roughly the same delay as our own timer, which cancels our touch
-  // sequence (a touchcancel) to show its own text-selection/context UI —
-  // that's the haptic buzz firing with no mark actually appearing. Calling
-  // preventDefault on touchstart itself heads that off, leaving our timer
-  // as the only thing driving the long-press.
+  // Taps are handled entirely by hand on touch (touchend calls onPrimary
+  // directly) rather than relying on the browser's synthetic click, because
+  // preventDefault on touchstart — needed below to stop Android's native
+  // long-press gesture — also suppresses that synthetic click. Without our
+  // own tap handling, a plain short tap would stop doing anything.
   target.addEventListener(
     'touchstart',
-    (e) => {
+    (evt: Event) => {
+      const e = evt as TouchEvent;
       e.preventDefault();
       longPressFired = false;
+      moved = false;
       clearTimer();
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
       timer = window.setTimeout(() => {
         longPressFired = true;
         onSecondary();
@@ -128,27 +136,46 @@ export function attachPrimarySecondary(
     },
     { passive: false },
   );
-  target.addEventListener('touchend', clearTimer);
-  target.addEventListener('touchmove', clearTimer);
-  target.addEventListener('touchcancel', clearTimer);
 
-  // Some browsers still dispatch a native contextmenu after a long-press
-  // despite the above; if our own timer just handled it, swallow the
-  // duplicate instead of toggling the mark a second time.
+  target.addEventListener(
+    'touchmove',
+    (evt: Event) => {
+      const e = evt as TouchEvent;
+      const t = e.touches[0];
+      if (!t) return;
+      if (Math.abs(t.clientX - startX) > MOVE_TOLERANCE || Math.abs(t.clientY - startY) > MOVE_TOLERANCE) {
+        moved = true;
+        clearTimer();
+      }
+    },
+    { passive: true },
+  );
+
+  target.addEventListener(
+    'touchend',
+    (e) => {
+      e.preventDefault();
+      clearTimer();
+      if (!longPressFired && !moved) onPrimary();
+      longPressFired = false;
+      moved = false;
+    },
+    { passive: false },
+  );
+
+  target.addEventListener('touchcancel', () => {
+    clearTimer();
+    longPressFired = false;
+    moved = false;
+  });
+
+  // Reached only by a real mouse right-click — touch never gets here since
+  // touchstart/touchend above already prevent the native long-press path.
   target.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    if (longPressFired) {
-      longPressFired = false;
-      return;
-    }
     onSecondary();
   });
 
-  target.addEventListener('click', () => {
-    if (longPressFired) {
-      longPressFired = false;
-      return;
-    }
-    onPrimary();
-  });
+  // Reached only by a real mouse click, for the same reason.
+  target.addEventListener('click', onPrimary);
 }
