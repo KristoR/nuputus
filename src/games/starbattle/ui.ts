@@ -2,14 +2,22 @@ import { el, clear } from '../../lib/dom';
 import type { Difficulty } from '../../lib/types';
 import { attachPrimarySecondary, difficultyLabel, renderDifficultyPicker, renderHintPanel, renderMessage, toolbarButton } from '../../lib/ui-helpers';
 import { EMPTY, STAR, UNKNOWN, emptyPlay, type PlayState } from './core';
-import { generateStarBattle } from './generate';
+import { generateStarBattle, type StarCount } from './generate';
 import { getStarBattleHint, type StarBattleDeduction } from './hints';
 
-const RULES_HTML = `
-  <p><strong>Eesmärk:</strong> aseta igasse ritta, veergu ja värvilisse alasse täpselt üks täht ⭐.</p>
-  <p>Tähed ei tohi teineteist puutuda ka mitte nurga pealt.</p>
-  <p>Puuduta ruutu, et sinna tuleks täht. Hoia all (või paremklõpsa hiirega), et märkida ruut kindlasti tähetuks (×). Kasuta <strong>Vihjet</strong>, kui jääd kinni.</p>
-`;
+function rulesHtml(stars: number | null): string {
+  const goal =
+    stars === null
+      ? 'aseta igasse ritta, veergu ja värvilisse alasse täpselt nii mitu tähte, kui valitud versioon nõuab (1 või 2) ⭐'
+      : stars === 1
+        ? 'aseta igasse ritta, veergu ja värvilisse alasse täpselt üks täht ⭐'
+        : `aseta igasse ritta, veergu ja värvilisse alasse täpselt ${stars} tähte ⭐⭐`;
+  return `
+    <p><strong>Eesmärk:</strong> ${goal}.</p>
+    <p>Tähed ei tohi teineteist puutuda ka mitte nurga pealt.</p>
+    <p>Puuduta ruutu, et sinna tuleks täht. Hoia all (või paremklõpsa hiirega), et märkida ruut kindlasti tähetuks (×). Kasuta <strong>Vihjet</strong>, kui jääd kinni.</p>
+  `;
+}
 
 const PALETTE = ['#e7d9c4', '#d8e3d3', '#dbe0ea', '#ecd9df', '#e0e6c8', '#dde3ec', '#ecdccb', '#d6e6e2', '#e5dcec', '#e9e0cf'];
 
@@ -21,19 +29,42 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
 
   function showPicker() {
     clear(root);
+    let stars: StarCount = 1;
+
+    const starButtons = ([1, 2] as StarCount[]).map((s) => {
+      const btn = el('button', { class: `pill-btn${s === stars ? ' active' : ''}` }, [
+        s === 1 ? '⭐ 1 täht' : '⭐⭐ 2 tähte',
+      ]);
+      btn.addEventListener('click', () => {
+        stars = s;
+        starRow.querySelectorAll('.pill-btn').forEach((p) => p.classList.remove('active'));
+        btn.classList.add('active');
+      });
+      return btn;
+    });
+    const starRow = el('div', { class: 'difficulty-row' }, starButtons);
+
     root.append(
       renderDifficultyPicker({
         gameTitle: 'Tähesõda',
         emoji: '⭐',
-        rulesHtml: RULES_HTML,
-        onStart: (d) => startGame(d),
+        rulesHtml: rulesHtml(null),
+        extra: starRow,
+        onStart: (d) => startGame(d, stars),
       }),
     );
   }
 
-  function startGame(difficulty: Difficulty) {
-    const puzzle = generateStarBattle(difficulty);
-    const { n, regions, solution } = puzzle;
+  function startGame(difficulty: Difficulty, starCount: StarCount) {
+    // 2-star puzzles can take up to ~2s to generate; show a loading state
+    // and defer the heavy work a tick so the message actually paints first.
+    clear(root);
+    root.append(el('p', { class: 'rules-box' }, ['Genereerin mõistatust...']));
+    window.setTimeout(() => buildGame(generateStarBattle(difficulty, starCount), difficulty), 10);
+  }
+
+  function buildGame(puzzle: ReturnType<typeof generateStarBattle>, difficulty: Difficulty) {
+    const { n, stars, regions, solution } = puzzle;
     const state: PlayState = emptyPlay(n);
     let hint: StarBattleDeduction | null = null;
     let errorCells = new Set<string>();
@@ -53,7 +84,8 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
 
     function renderStatus() {
       clear(statusLine);
-      statusLine.append(el('span', {}, [`${difficultyLabel(difficulty)} · ${starsPlaced()}/${n} tähte`]));
+      const label = stars === 1 ? difficultyLabel(difficulty) : `${difficultyLabel(difficulty)} · ${stars}★`;
+      statusLine.append(el('span', {}, [`${label} · ${starsPlaced()}/${n * stars} tähte`]));
     }
 
     function setCell(r: number, c: number, value: number) {
@@ -192,7 +224,7 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
     const rulesBox = el('details', { class: 'rules-box' });
     rulesBox.append(el('summary', {}, ['⭐ Reeglid']));
     const rulesBody = el('div', {});
-    rulesBody.innerHTML = RULES_HTML;
+    rulesBody.innerHTML = rulesHtml(stars);
     rulesBox.append(rulesBody);
 
     root.append(toolbar, statusLine, boardWrap, hintHost, messageHost, rulesBox);
