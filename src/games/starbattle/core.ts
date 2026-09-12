@@ -7,6 +7,7 @@ export type RegionGrid = number[][]; // region id per cell, 0..n-1
 
 export interface StarBattlePuzzle {
   n: number;
+  stars: number; // required stars per row/column/region
   regions: RegionGrid;
   solution: PlayState;
 }

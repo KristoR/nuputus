@@ -38,6 +38,10 @@ function allUnits(puzzle: StarBattlePuzzle): Unit[] {
   return units;
 }
 
+function starWord(count: number): string {
+  return count === 1 ? '1 täht' : `${count} tähte`;
+}
+
 function findAdjacencyExclusion(puzzle: StarBattlePuzzle, state: PlayState): StarBattleDeduction | null {
   const { n } = puzzle;
   for (let r = 0; r < n; r++) {
@@ -56,13 +60,15 @@ function findAdjacencyExclusion(puzzle: StarBattlePuzzle, state: PlayState): Sta
   return null;
 }
 
+/** A unit that already has all its required stars: every other cell in it must be empty. */
 function findUnitSatisfied(puzzle: StarBattlePuzzle, state: PlayState): StarBattleDeduction | null {
+  const { stars } = puzzle;
   for (const unit of allUnits(puzzle)) {
     const rest = unknownIn(state, unit.cells);
-    if (rest.length > 0 && starCountIn(state, unit.cells) === 1) {
+    if (rest.length > 0 && starCountIn(state, unit.cells) === stars) {
       return {
         title: 'Täht on juba paigas',
-        explanation: `${capitalize(unit.label)} on täht juba olemas, seega kõik ülejäänud tühjad ruudud sealsamas jäävad tähetuks.`,
+        explanation: `${capitalize(unit.label)} on juba ${starWord(stars)}, seega kõik ülejäänud tühjad ruudud sealsamas jäävad tähetuks.`,
         assignments: rest.map(([r, c]) => ({ r, c, value: EMPTY })),
       };
     }
@@ -70,72 +76,117 @@ function findUnitSatisfied(puzzle: StarBattlePuzzle, state: PlayState): StarBatt
   return null;
 }
 
-function findUnitForcedSingle(puzzle: StarBattlePuzzle, state: PlayState): StarBattleDeduction | null {
+/** A unit whose remaining unknown cells exactly match its remaining needed stars: they must all be stars. */
+function findUnitForcedFill(puzzle: StarBattlePuzzle, state: PlayState): StarBattleDeduction | null {
+  const { stars } = puzzle;
   for (const unit of allUnits(puzzle)) {
     const rest = unknownIn(state, unit.cells);
-    if (starCountIn(state, unit.cells) === 0 && rest.length === 1) {
-      const [r, c] = rest[0];
+    const needed = stars - starCountIn(state, unit.cells);
+    if (needed > 0 && rest.length === needed) {
+      const single = needed === 1;
       return {
-        title: 'Ainus võimalik koht',
-        explanation: `${capitalize(unit.label)} on jäänud ainult üks vaba ruut ja seal peab olema täht: rida ${r + 1}, veerg ${c + 1}.`,
-        assignments: [{ r, c, value: STAR }],
+        title: single ? 'Ainus võimalik koht' : 'Ainsad võimalikud kohad',
+        explanation: single
+          ? `${capitalize(unit.label)} on jäänud ainult üks vaba ruut ja seal peab olema täht: rida ${rest[0][0] + 1}, veerg ${rest[0][1] + 1}.`
+          : `${capitalize(unit.label)} on vaja veel ${starWord(needed)} ja vabu ruute on täpselt sama palju, seega peavad kõik need ruudud olema tähed.`,
+        assignments: rest.map(([r, c]) => ({ r, c, value: STAR })),
       };
     }
   }
   return null;
 }
 
-/** A region whose remaining candidate cells all sit in one row/column forces the rest of that line empty. */
+/** A region whose remaining candidate stars all sit in one row/column, matching that row/column's own remaining need, forces the rest of that line empty. */
 function findRegionLineReduction(puzzle: StarBattlePuzzle, state: PlayState): StarBattleDeduction | null {
-  const { n, regions } = puzzle;
+  const { n, regions, stars } = puzzle;
   for (let id = 0; id < n; id++) {
     const cells = regionCells(regions, n, id);
-    if (starCountIn(state, cells) > 0) continue;
+    const needed = stars - starCountIn(state, cells);
+    if (needed <= 0) continue;
     const rest = unknownIn(state, cells);
-    if (rest.length < 2) continue;
+    if (rest.length <= needed) continue; // already covered by findUnitForcedFill
 
     const rows = new Set(rest.map(([r]) => r));
     if (rows.size === 1) {
       const r = rest[0][0];
-      const outside = rowCells(n, r).filter(([, c]) => regions[r][c] !== id && state[r][c] === UNKNOWN);
-      if (outside.length > 0) {
-        return {
-          title: 'Ala on kitsendatud reale',
-          explanation: `Selle ala kõik võimalikud tähekohad on real ${r + 1} — seega peab ala täht tulema sinna ritta ning rea ülejäänud, alasse mittekuuluvad ruudud jäävad tähetuks.`,
-          assignments: outside.map(([rr, cc]) => ({ r: rr, c: cc, value: EMPTY })),
-        };
+      const rowNeeded = stars - starCountIn(state, rowCells(n, r));
+      if (rowNeeded === needed) {
+        const outside = rowCells(n, r).filter(([, c]) => regions[r][c] !== id && state[r][c] === UNKNOWN);
+        if (outside.length > 0) {
+          return {
+            title: 'Ala on kitsendatud reale',
+            explanation: `Selle ala kõik ülejäänud võimalikud tähekohad on real ${r + 1} — seega peavad selle rea ülejäänud tähed tulema sealt alast ning rea teised, alasse mittekuuluvad ruudud jäävad tähetuks.`,
+            assignments: outside.map(([rr, cc]) => ({ r: rr, c: cc, value: EMPTY })),
+          };
+        }
       }
     }
 
     const cols = new Set(rest.map(([, c]) => c));
     if (cols.size === 1) {
       const c = rest[0][1];
-      const outside = colCells(n, c).filter(([r]) => regions[r][c] !== id && state[r][c] === UNKNOWN);
-      if (outside.length > 0) {
-        return {
-          title: 'Ala on kitsendatud veerule',
-          explanation: `Selle ala kõik võimalikud tähekohad on veerus ${c + 1} — seega peab ala täht tulema sinna veergu ning veeru ülejäänud, alasse mittekuuluvad ruudud jäävad tähetuks.`,
-          assignments: outside.map(([rr, cc]) => ({ r: rr, c: cc, value: EMPTY })),
-        };
+      const colNeeded = stars - starCountIn(state, colCells(n, c));
+      if (colNeeded === needed) {
+        const outside = colCells(n, c).filter(([r]) => regions[r][c] !== id && state[r][c] === UNKNOWN);
+        if (outside.length > 0) {
+          return {
+            title: 'Ala on kitsendatud veerule',
+            explanation: `Selle ala kõik ülejäänud võimalikud tähekohad on veerus ${c + 1} — seega peavad selle veeru ülejäänud tähed tulema sealt alast ning veeru teised, alasse mittekuuluvad ruudud jäävad tähetuks.`,
+            assignments: outside.map(([rr, cc]) => ({ r: rr, c: cc, value: EMPTY })),
+          };
+        }
       }
     }
   }
   return null;
 }
 
-function findFallback(puzzle: StarBattlePuzzle, state: PlayState): StarBattleDeduction | null {
+/** How "in-progress" a cell's neighbourhood is — fewer remaining unknowns in its tightest unit means it's the more natural next spot to reason about. */
+function localityScore(puzzle: StarBattlePuzzle, state: PlayState, r: number, c: number): number {
   const { n, regions } = puzzle;
-  const { first } = solveStarBattle(n, regions, 1);
-  if (!first) return null;
-  for (let r = 0; r < n; r++) {
-    for (let c = 0; c < n; c++) {
-      if (state[r][c] === UNKNOWN) {
-        return {
-          title: 'Keerulisem samm',
-          explanation: `See ruut (rida ${r + 1}, veerg ${c + 1}) vajab põhjalikumat loogikat. Vaata, kuhu tähed selles reas, veerus ja alas veel üldse mahuksid, ja proovi variante läbi mängida.`,
-          assignments: [{ r, c, value: first[r][c] }],
-        };
-      }
+  const rowLeft = unknownIn(state, rowCells(n, r)).length;
+  const colLeft = unknownIn(state, colCells(n, c)).length;
+  const regionLeft = unknownIn(state, regionCells(regions, n, regions[r][c])).length;
+  return Math.min(rowLeft, colLeft, regionLeft);
+}
+
+/**
+ * For a cell that no direct rule resolves yet, try both values and see
+ * which one still lets the puzzle be completed at all (the puzzle has a
+ * unique solution, so exactly one of the two will remain solvable). This
+ * mirrors genuine "if this were X, the puzzle would be stuck" reasoning
+ * rather than just revealing the answer, and — by checking the most
+ * constrained cells first — points at the part of the board that's
+ * furthest along, i.e. the logical next spot to work on.
+ */
+function findContradiction(puzzle: StarBattlePuzzle, state: PlayState): StarBattleDeduction | null {
+  const { n, regions, stars } = puzzle;
+  const candidates: [number, number][] = [];
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (state[r][c] === UNKNOWN) candidates.push([r, c]);
+  candidates.sort((a, b) => localityScore(puzzle, state, ...a) - localityScore(puzzle, state, ...b));
+
+  for (const [r, c] of candidates) {
+    const asStar = state.map((row) => row.slice());
+    asStar[r][c] = STAR;
+    const starFeasible = solveStarBattle(n, regions, stars, 1, asStar).count > 0;
+
+    const asEmpty = state.map((row) => row.slice());
+    asEmpty[r][c] = EMPTY;
+    const emptyFeasible = solveStarBattle(n, regions, stars, 1, asEmpty).count > 0;
+
+    if (starFeasible && !emptyFeasible) {
+      return {
+        title: 'Loogiline tuletus',
+        explanation: `Ruut (rida ${r + 1}, veerg ${c + 1}) peab olema täht — kui see jääks tähetuks, ei oleks mõistatust enam üldse võimalik lahendada.`,
+        assignments: [{ r, c, value: STAR }],
+      };
+    }
+    if (emptyFeasible && !starFeasible) {
+      return {
+        title: 'Loogiline tuletus',
+        explanation: `Ruut (rida ${r + 1}, veerg ${c + 1}) peab jääma tähetuks — kui siia paigutada täht, ei oleks mõistatust enam üldse võimalik lahendada.`,
+        assignments: [{ r, c, value: EMPTY }],
+      };
     }
   }
   return null;
@@ -149,8 +200,30 @@ export function getStarBattleHint(puzzle: StarBattlePuzzle, state: PlayState): S
   return (
     findAdjacencyExclusion(puzzle, state) ??
     findUnitSatisfied(puzzle, state) ??
-    findUnitForcedSingle(puzzle, state) ??
+    findUnitForcedFill(puzzle, state) ??
     findRegionLineReduction(puzzle, state) ??
-    findFallback(puzzle, state)
+    findContradiction(puzzle, state)
   );
+}
+
+/**
+ * Whether the puzzle can be fully solved from scratch using only the cheap,
+ * "obvious" techniques (no trial-and-error contradiction search). Used at
+ * generation time to reject puzzles that don't actually require any real
+ * reasoning, so the hardest difficulty tier is guaranteed to need it.
+ */
+export function solvableWithSimpleTechniques(puzzle: StarBattlePuzzle): boolean {
+  const { n } = puzzle;
+  const state: PlayState = Array.from({ length: n }, () => Array(n).fill(UNKNOWN));
+  while (true) {
+    const solved = state.every((row) => row.every((v) => v !== UNKNOWN));
+    if (solved) return true;
+    const step =
+      findAdjacencyExclusion(puzzle, state) ??
+      findUnitSatisfied(puzzle, state) ??
+      findUnitForcedFill(puzzle, state) ??
+      findRegionLineReduction(puzzle, state);
+    if (!step) return false;
+    for (const a of step.assignments) state[a.r][a.c] = a.value;
+  }
 }

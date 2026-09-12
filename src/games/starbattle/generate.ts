@@ -1,12 +1,25 @@
 import type { Difficulty } from '../../lib/types';
-import { STAR, type PlayState, type RegionGrid, type StarBattlePuzzle } from './core';
+import { type RegionGrid, type StarBattlePuzzle } from './core';
+import { solvableWithSimpleTechniques } from './hints';
 import { solveStarBattle } from './solve';
 
-// One star per row/column/region gets combinatorially under-constrained past
-// n=8: random region growth essentially never lands on a unique solution
-// (verified empirically — n=10 didn't converge in 150k+ attempts), so
-// difficulty is scaled by grid size only up to 8.
-const SIZE: Record<Difficulty, number> = { lihtne: 6, keskmine: 7, raske: 8 };
+export type StarCount = 1 | 2;
+
+// Regions are grown independently of any star placement (see
+// growRandomRegions below) and then checked for a unique valid star
+// placement via the full solver. Grid size is capped where that check
+// stops converging within a reasonable number of attempts — empirically,
+// generation past these sizes essentially never lands on a unique
+// solution quickly enough to stay usable.
+const SIZE: Record<StarCount, Record<Difficulty, number>> = {
+  1: { lihtne: 6, keskmine: 7, raske: 9 },
+  2: { lihtne: 8, keskmine: 9, raske: 9 },
+};
+
+// "Raske" additionally requires that simple techniques alone can't finish
+// the puzzle, so the hardest tier is guaranteed to need real reasoning
+// rather than just happening to land on a bigger grid.
+const REQUIRE_HARD: Record<Difficulty, boolean> = { lihtne: false, keskmine: false, raske: true };
 
 function mulberry32(seed: number) {
   return function () {
@@ -27,54 +40,34 @@ function shuffle<T>(arr: T[], rng: () => number): T[] {
   return a;
 }
 
-/** One star per row/column, no two touching (even diagonally). */
-function generateStarPlacement(n: number, rng: () => number): number[] | null {
-  const cols = Array.from({ length: n }, (_, i) => i);
-  const used = Array(n).fill(false);
-  const starCol = Array(n).fill(-1);
-
-  function place(row: number): boolean {
-    if (row === n) return true;
-    for (const c of shuffle(cols, rng)) {
-      if (used[c]) continue;
-      if (row > 0 && Math.abs(starCol[row - 1] - c) <= 1) continue;
-      used[c] = true;
-      starCol[row] = c;
-      if (place(row + 1)) return true;
-      used[c] = false;
-      starCol[row] = -1;
-    }
-    return false;
-  }
-
-  return place(0) ? starCol.slice() : null;
+function orthoOf(n: number, r: number, c: number): [number, number][] {
+  return ([
+    [r - 1, c],
+    [r + 1, c],
+    [r, c - 1],
+    [r, c + 1],
+  ] as [number, number][]).filter(([rr, cc]) => rr >= 0 && rr < n && cc >= 0 && cc < n);
 }
 
 /**
- * Grows n connected regions outward from the star cells via randomized
- * flood fill (a random frontier cell is claimed by its region each step).
- * Letting region sizes vary organically like this — rather than keeping
- * them balanced — turns out to eliminate alternate solutions far more
- * often, which is what generation uniqueness depends on.
+ * Grows n connected regions covering the whole board from n random seed
+ * cells via randomized flood fill (a random frontier cell is claimed by
+ * its region each step). Letting region sizes vary organically like this
+ * — rather than keeping them balanced — turns out to make an eventual
+ * unique solution far more likely, which is what generation depends on.
  */
-function growRegions(n: number, starCol: number[], rng: () => number): RegionGrid {
+function growRandomRegions(n: number, rng: () => number): RegionGrid {
   const regions: RegionGrid = Array.from({ length: n }, () => Array(n).fill(-1));
+  const allCells: [number, number][] = [];
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) allCells.push([r, c]);
+  const seeds = shuffle(allCells, rng).slice(0, n);
+
   type Frontier = { region: number; r: number; c: number };
   const frontier: Frontier[] = [];
-
-  function orthoOf(r: number, c: number): [number, number][] {
-    return ([
-      [r - 1, c],
-      [r + 1, c],
-      [r, c - 1],
-      [r, c + 1],
-    ] as [number, number][]).filter(([rr, cc]) => rr >= 0 && rr < n && cc >= 0 && cc < n);
-  }
-
-  for (let r = 0; r < n; r++) {
-    regions[r][starCol[r]] = r;
-    for (const [rr, cc] of orthoOf(r, starCol[r])) frontier.push({ region: r, r: rr, c: cc });
-  }
+  seeds.forEach(([r, c], id) => {
+    regions[r][c] = id;
+    for (const [rr, cc] of orthoOf(n, r, c)) frontier.push({ region: id, r: rr, c: cc });
+  });
 
   while (frontier.length > 0) {
     const idx = Math.floor(rng() * frontier.length);
@@ -82,42 +75,39 @@ function growRegions(n: number, starCol: number[], rng: () => number): RegionGri
     frontier.splice(idx, 1);
     if (regions[r][c] !== -1) continue;
     regions[r][c] = region;
-    for (const [rr, cc] of orthoOf(r, c)) frontier.push({ region, r: rr, c: cc });
+    for (const [rr, cc] of orthoOf(n, r, c)) frontier.push({ region, r: rr, c: cc });
   }
 
   return regions;
 }
 
-function tryGenerate(n: number, rng: () => number): StarBattlePuzzle | null {
-  const starCol = generateStarPlacement(n, rng);
-  if (!starCol) return null;
-  const regions = growRegions(n, starCol, rng);
+// Bounds how much search a single candidate region layout gets before it's
+// abandoned for a fresh one — without this, a handful of unlucky layouts
+// (usually ones with many near-solutions) can each burn seconds of search
+// just to rule themselves out, which adds up badly over thousands of tries.
+const SOLVE_NODE_BUDGET = 40000;
 
-  const { count, first } = solveStarBattle(n, regions, 2);
-  if (count !== 1 || !first) return null;
-
-  return { n, regions, solution: first };
+function tryGenerate(n: number, stars: number, requireHard: boolean, rng: () => number): StarBattlePuzzle | null {
+  const regions = growRandomRegions(n, rng);
+  const { count, first, aborted } = solveStarBattle(n, regions, stars, 2, null, SOLVE_NODE_BUDGET);
+  if (aborted || count !== 1 || !first) return null;
+  const puzzle: StarBattlePuzzle = { n, stars, regions, solution: first };
+  if (requireHard && solvableWithSimpleTechniques(puzzle)) return null;
+  return puzzle;
 }
 
-export function generateStarBattle(difficulty: Difficulty, seed = Date.now()): StarBattlePuzzle {
-  const n = SIZE[difficulty];
+export function generateStarBattle(difficulty: Difficulty, stars: StarCount, seed = Date.now()): StarBattlePuzzle {
+  const n = SIZE[stars][difficulty];
+  const requireHard = REQUIRE_HARD[difficulty];
   const rng = mulberry32(seed);
   for (let i = 0; i < 15000; i++) {
-    const result = tryGenerate(n, rng);
+    const result = tryGenerate(n, stars, requireHard, rng);
     if (result) return result;
   }
   const fallbackRng = mulberry32(Date.now() + 7);
   for (let i = 0; i < 15000; i++) {
-    const result = tryGenerate(n, fallbackRng);
+    const result = tryGenerate(n, stars, requireHard, fallbackRng);
     if (result) return result;
   }
   throw new Error('Tähesõja mõistatuse loomine ebaõnnestus.');
-}
-
-export function starLocations(state: PlayState): [number, number][] {
-  const out: [number, number][] = [];
-  for (let r = 0; r < state.length; r++) {
-    for (let c = 0; c < state.length; c++) if (state[r][c] === STAR) out.push([r, c]);
-  }
-  return out;
 }

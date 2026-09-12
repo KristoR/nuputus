@@ -18,6 +18,8 @@ export function renderDifficultyPicker(opts: {
   rulesHtml: string;
   onStart: (d: Difficulty) => void;
   initial?: Difficulty;
+  /** Extra control (e.g. a variant toggle) shown between the difficulty pills and the start button. */
+  extra?: HTMLElement;
 }): HTMLElement {
   let selected: Difficulty = opts.initial ?? 'lihtne';
 
@@ -42,15 +44,17 @@ export function renderDifficultyPicker(opts: {
   rulesBody.innerHTML = opts.rulesHtml;
   rulesBox.append(rulesBody);
 
-  const wrap = el('div', { class: 'difficulty-screen' }, [
+  const children: (Node | string)[] = [
     el('h2', {}, [`${opts.emoji} ${opts.gameTitle}`]),
     el('p', { style: 'color: var(--ink-dim); font-family: system-ui, sans-serif;' }, [
       'Vali raskusaste ja alusta.',
     ]),
     el('div', { class: 'difficulty-row' }, pills),
-    startBtn,
-    rulesBox,
-  ]);
+  ];
+  if (opts.extra) children.push(opts.extra);
+  children.push(startBtn, rulesBox);
+
+  const wrap = el('div', { class: 'difficulty-screen' }, children);
   return wrap;
 }
 

@@ -385,7 +385,8 @@ footer.app-footer {
 /* ---------- Sudoku ---------- */
 .sudoku-grid {
   display: grid;
-  grid-template-columns: repeat(9, 1fr);
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  grid-template-rows: repeat(9, minmax(0, 1fr));
   width: min(92vw, 440px);
   aspect-ratio: 1;
   border: 2px solid var(--ink);
@@ -424,7 +425,7 @@ footer.app-footer {
 
 .numpad {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.4rem;
   max-width: 440px;
   margin: 0 auto;
@@ -453,9 +454,10 @@ footer.app-footer {
 /* ---------- Tents ---------- */
 .tents-grid {
   display: grid;
-  grid-template-columns: repeat(var(--n), 1fr);
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--n), minmax(0, 1fr));
   width: min(94vw, 480px);
-  aspect-ratio: var(--n);
+  aspect-ratio: 1;
   border: 2px solid var(--ink);
 }
 
@@ -490,7 +492,8 @@ footer.app-footer {
 /* ---------- Star battle ---------- */
 .starbattle-grid {
   display: grid;
-  grid-template-columns: repeat(var(--n), 1fr);
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--n), minmax(0, 1fr));
   width: min(94vw, 460px);
   aspect-ratio: 1;
   border: 2px solid var(--ink);
@@ -534,9 +537,10 @@ footer.app-footer {
 
 .battleship-grid {
   display: grid;
-  grid-template-columns: repeat(var(--n), 1fr);
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--n), minmax(0, 1fr));
   width: min(94vw, 480px);
-  aspect-ratio: var(--n);
+  aspect-ratio: 1;
   border: 2px solid var(--ink);
 }
 
