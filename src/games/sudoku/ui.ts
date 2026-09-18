@@ -2,9 +2,12 @@ import { el, clear } from '../../lib/dom';
 import type { Difficulty } from '../../lib/types';
 import { cellKey } from '../../lib/types';
 import { difficultyLabel, renderDifficultyPicker, renderHintPanel, renderMessage, toolbarButton } from '../../lib/ui-helpers';
+import { clearGame, loadGame, saveGame } from '../../lib/persist';
 import { cloneBoard, isComplete, type Board } from './core';
-import { generateSudoku } from './generate';
+import { generateSudoku, type SudokuPuzzle } from './generate';
 import { getSudokuHint, type SudokuDeduction } from './hints';
+
+const GAME_ID = 'sudoku';
 
 const RULES_HTML = `
   <p><strong>Eesmärk:</strong> täida iga rida, veerg ja 3×3 kast numbritega 1–9, iga number täpselt üks kord.</p>
@@ -34,13 +37,13 @@ export function mountSudoku(container: HTMLElement, setTitle: (t: string) => voi
     );
   }
 
-  function startGame(difficulty: Difficulty) {
+  function startGame(difficulty: Difficulty, resume?: { puzzle: SudokuPuzzle; state: Board }) {
     disposeGame?.();
     disposeGame = null;
-    const puzzle = generateSudoku(difficulty);
+    const puzzle = resume?.puzzle ?? generateSudoku(difficulty);
     const givens = puzzle.givens;
     const solution = puzzle.solution;
-    const current: Board = cloneBoard(givens);
+    const current: Board = resume?.state ?? cloneBoard(givens);
     let selected: [number, number] | null = null;
     let hint: SudokuDeduction | null = null;
     let errorCells = new Set<string>();
@@ -120,6 +123,11 @@ export function mountSudoku(container: HTMLElement, setTitle: (t: string) => voi
       padHost.append(pad);
     }
 
+    function persist() {
+      if (solved) clearGame(GAME_ID);
+      else saveGame(GAME_ID, { difficulty, puzzle, state: current });
+    }
+
     function setValue(v: number) {
       if (!selected) return;
       const [r, c] = selected;
@@ -128,6 +136,7 @@ export function mountSudoku(container: HTMLElement, setTitle: (t: string) => voi
       errorCells = new Set();
       hint = null;
       checkSolved();
+      persist();
       renderAll();
     }
 
@@ -164,6 +173,7 @@ export function mountSudoku(container: HTMLElement, setTitle: (t: string) => voi
       hint = null;
       errorCells = new Set();
       checkSolved();
+      persist();
       renderAll();
     }
 
@@ -203,7 +213,10 @@ export function mountSudoku(container: HTMLElement, setTitle: (t: string) => voi
     toolbar.append(
       toolbarButton('Vihje', showHint),
       toolbarButton('Kontrolli', checkBoard),
-      toolbarButton('Uus mäng', showPicker),
+      toolbarButton('Uus mäng', () => {
+        clearGame(GAME_ID);
+        showPicker();
+      }),
     );
     const rulesBox = el('details', { class: 'rules-box' });
     rulesBox.append(el('summary', {}, ['🔢 Reeglid']));
@@ -240,7 +253,9 @@ export function mountSudoku(container: HTMLElement, setTitle: (t: string) => voi
     };
   }
 
-  showPicker();
+  const saved = loadGame<SudokuPuzzle, Board>(GAME_ID);
+  if (saved) startGame(saved.difficulty, saved);
+  else showPicker();
 
   return () => {
     disposed = true;

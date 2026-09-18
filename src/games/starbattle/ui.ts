@@ -1,9 +1,12 @@
 import { el, clear } from '../../lib/dom';
 import type { Difficulty } from '../../lib/types';
 import { attachPrimarySecondary, difficultyLabel, renderDifficultyPicker, renderHintPanel, renderMessage, toolbarButton } from '../../lib/ui-helpers';
-import { EMPTY, STAR, UNKNOWN, emptyPlay, type PlayState } from './core';
+import { clearGame, loadGame, saveGame } from '../../lib/persist';
+import { EMPTY, STAR, UNKNOWN, emptyPlay, type PlayState, type StarBattlePuzzle } from './core';
 import { generateStarBattle, type StarCount } from './generate';
 import { getStarBattleHint, type StarBattleDeduction } from './hints';
+
+const GAME_ID = 'starbattle';
 
 function rulesHtml(stars: number | null): string {
   const goal =
@@ -63,9 +66,9 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
     window.setTimeout(() => buildGame(generateStarBattle(difficulty, starCount), difficulty), 10);
   }
 
-  function buildGame(puzzle: ReturnType<typeof generateStarBattle>, difficulty: Difficulty) {
+  function buildGame(puzzle: StarBattlePuzzle, difficulty: Difficulty, resumeState?: PlayState) {
     const { n, stars, regions, solution } = puzzle;
-    const state: PlayState = emptyPlay(n);
+    const state: PlayState = resumeState ?? emptyPlay(n);
     let hint: StarBattleDeduction | null = null;
     let errorCells = new Set<string>();
     let checkedOk = false;
@@ -88,6 +91,11 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
       statusLine.append(el('span', {}, [`${label} · ${starsPlaced()}/${n * stars} tähte`]));
     }
 
+    function persist() {
+      if (solved) clearGame(GAME_ID);
+      else saveGame(GAME_ID, { difficulty, puzzle, state });
+    }
+
     function setCell(r: number, c: number, value: number) {
       if (solved) return;
       state[r][c] = value;
@@ -95,6 +103,7 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
       checkedOk = false;
       hint = null;
       checkSolved();
+      persist();
       updateAllCells();
       renderStatus();
       renderHintHost();
@@ -143,6 +152,7 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
       errorCells = new Set();
       checkedOk = false;
       checkSolved();
+      persist();
       updateAllCells();
       renderStatus();
       renderHintHost();
@@ -220,7 +230,14 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
     }
 
     clear(root);
-    toolbar.append(toolbarButton('Vihje', showHint), toolbarButton('Kontrolli', checkBoard), toolbarButton('Uus mäng', showPicker));
+    toolbar.append(
+      toolbarButton('Vihje', showHint),
+      toolbarButton('Kontrolli', checkBoard),
+      toolbarButton('Uus mäng', () => {
+        clearGame(GAME_ID);
+        showPicker();
+      }),
+    );
     const rulesBox = el('details', { class: 'rules-box' });
     rulesBox.append(el('summary', {}, ['⭐ Reeglid']));
     const rulesBody = el('div', {});
@@ -232,7 +249,9 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
     renderStatus();
   }
 
-  showPicker();
+  const saved = loadGame<StarBattlePuzzle, PlayState>(GAME_ID);
+  if (saved) buildGame(saved.puzzle, saved.difficulty, saved.state);
+  else showPicker();
 
   return () => {};
 }
