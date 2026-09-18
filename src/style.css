@@ -309,6 +309,15 @@ main {
   font-weight: 700;
 }
 
+.hint-panel.error {
+  background: var(--bad-soft);
+  border-color: var(--bad);
+}
+
+.hint-panel.error h4 {
+  color: var(--bad);
+}
+
 .hint-panel p {
   margin: 0;
   font-size: 0.9rem;

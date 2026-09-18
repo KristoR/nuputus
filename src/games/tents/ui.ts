@@ -37,6 +37,7 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
     const { n, trees, rowClue, colClue, solution } = puzzle;
     const state: PlayState = resume?.state ?? emptyPlay(n);
     let hint: TentsDeduction | null = null;
+    let hintIsError = false;
     let errorCells = new Set<string>();
     let checkedOk = false;
     let solved = false;
@@ -91,8 +92,7 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
       if (ok) solved = true;
     }
 
-    function checkBoard() {
-      checkSolved();
+    function computeErrors(): Set<string> {
       const bad = new Set<string>();
       for (let r = 0; r < n; r++) {
         for (let c = 0; c < n; c++) {
@@ -101,15 +101,30 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
           }
         }
       }
-      errorCells = bad;
-      checkedOk = bad.size === 0 && !solved;
+      return bad;
+    }
+
+    function checkBoard() {
+      checkSolved();
+      errorCells = computeErrors();
+      checkedOk = errorCells.size === 0 && !solved;
       updateAllCells();
       renderMessages();
     }
 
     function showHint() {
       if (solved) return;
-      hint = getTentsHint(puzzle, state);
+      if (computeErrors().size > 0) {
+        hintIsError = true;
+        hint = {
+          title: 'Midagi on praegu valesti',
+          explanation: 'Osa juba lauale märgitud ruutudest ei klapi õige lahendusega, seega ei saa neist veel edasi vihjata.',
+          assignments: [],
+        };
+      } else {
+        hintIsError = false;
+        hint = getTentsHint(puzzle, state);
+      }
       updateAllCells();
       renderHintHost();
     }
@@ -126,6 +141,12 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
       renderStatus();
       renderHintHost();
       renderMessages();
+    }
+
+    function revealErrors() {
+      hint = null;
+      checkBoard();
+      renderHintHost();
     }
 
     function glyphFor(r: number, c: number): string {
@@ -189,12 +210,18 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
     function renderHintHost() {
       clear(hintHost);
       if (hint) {
+        const onApply = hintIsError ? revealErrors : applyHint;
         hintHost.append(
-          renderHintPanel({ title: hint.title, explanation: hint.explanation, primary: [], apply: applyHint }, applyHint, () => {
-            hint = null;
-            updateAllCells();
-            renderHintHost();
-          }),
+          renderHintPanel(
+            { title: hint.title, explanation: hint.explanation, primary: [], apply: onApply },
+            onApply,
+            () => {
+              hint = null;
+              updateAllCells();
+              renderHintHost();
+            },
+            hintIsError ? { applyLabel: 'Näita, mis on valesti', kind: 'error' } : {},
+          ),
         );
       }
     }

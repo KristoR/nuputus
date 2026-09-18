@@ -46,6 +46,7 @@ export function mountSudoku(container: HTMLElement, setTitle: (t: string) => voi
     const current: Board = resume?.state ?? cloneBoard(givens);
     let selected: [number, number] | null = null;
     let hint: SudokuDeduction | null = null;
+    let hintError: { title: string; explanation: string } | null = null;
     let errorCells = new Set<string>();
     let solved = false;
     const startedAt = Date.now();
@@ -101,6 +102,7 @@ export function mountSudoku(container: HTMLElement, setTitle: (t: string) => voi
             if (isGiven) return;
             selected = [r, c];
             hint = null;
+            hintError = null;
             renderAll();
           });
           table.append(cell);
@@ -135,6 +137,7 @@ export function mountSudoku(container: HTMLElement, setTitle: (t: string) => voi
       current[r][c] = v;
       errorCells = new Set();
       hint = null;
+      hintError = null;
       checkSolved();
       persist();
       renderAll();
@@ -150,20 +153,33 @@ export function mountSudoku(container: HTMLElement, setTitle: (t: string) => voi
       }
     }
 
-    function checkBoard() {
+    function computeErrors(): Set<string> {
       const bad = new Set<string>();
       for (let r = 0; r < 9; r++) {
         for (let c = 0; c < 9; c++) {
           if (current[r][c] !== 0 && current[r][c] !== solution[r][c]) bad.add(cellKey(r, c));
         }
       }
-      errorCells = bad;
+      return bad;
+    }
+
+    function checkBoard() {
+      errorCells = computeErrors();
       renderAll();
     }
 
     function showHint() {
       if (solved) return;
-      hint = getSudokuHint(current, solution);
+      if (computeErrors().size > 0) {
+        hintError = {
+          title: 'Midagi on praegu valesti',
+          explanation: 'Osa juba lauale sisestatud numbritest ei klapi õige lahendusega, seega ei saa neist veel edasi vihjata.',
+        };
+        hint = null;
+      } else {
+        hintError = null;
+        hint = getSudokuHint(current, solution);
+      }
       renderAll();
     }
 
@@ -177,6 +193,11 @@ export function mountSudoku(container: HTMLElement, setTitle: (t: string) => voi
       renderAll();
     }
 
+    function revealErrors() {
+      hintError = null;
+      checkBoard();
+    }
+
     function renderMessages() {
       clear(messageHost);
       if (solved) {
@@ -188,7 +209,19 @@ export function mountSudoku(container: HTMLElement, setTitle: (t: string) => voi
 
     function renderHintHost() {
       clear(hintHost);
-      if (hint) {
+      if (hintError) {
+        hintHost.append(
+          renderHintPanel(
+            { title: hintError.title, explanation: hintError.explanation, primary: [], apply: revealErrors },
+            revealErrors,
+            () => {
+              hintError = null;
+              renderAll();
+            },
+            { applyLabel: 'Näita, mis on valesti', kind: 'error' },
+          ),
+        );
+      } else if (hint) {
         hintHost.append(
           renderHintPanel(
             { title: hint.title, explanation: hint.explanation, primary: [], apply: applyHint },

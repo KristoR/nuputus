@@ -70,6 +70,7 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
     const { n, stars, regions, solution } = puzzle;
     const state: PlayState = resumeState ?? emptyPlay(n);
     let hint: StarBattleDeduction | null = null;
+    let hintIsError = false;
     let errorCells = new Set<string>();
     let checkedOk = false;
     let solved = false;
@@ -124,23 +125,40 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
       if (ok) solved = true;
     }
 
-    function checkBoard() {
-      checkSolved();
+    function computeErrors(): Set<string> {
       const bad = new Set<string>();
       for (let r = 0; r < n; r++) {
         for (let c = 0; c < n; c++) {
           if (state[r][c] !== UNKNOWN && state[r][c] !== solution[r][c]) bad.add(`${r},${c}`);
         }
       }
-      errorCells = bad;
-      checkedOk = bad.size === 0 && !solved;
+      return bad;
+    }
+
+    function checkBoard() {
+      checkSolved();
+      errorCells = computeErrors();
+      checkedOk = errorCells.size === 0 && !solved;
       updateAllCells();
       renderMessages();
     }
 
     function showHint() {
       if (solved) return;
-      hint = getStarBattleHint(puzzle, state);
+      // A hint reasons forward from the board as it stands, so if something
+      // already on the board is wrong, check that first rather than build
+      // a "logical" hint on top of a mistake.
+      if (computeErrors().size > 0) {
+        hintIsError = true;
+        hint = {
+          title: 'Midagi on praegu valesti',
+          explanation: 'Osa juba lauale märgitud ruutudest ei klapi õige lahendusega, seega ei saa neist veel edasi vihjata.',
+          assignments: [],
+        };
+      } else {
+        hintIsError = false;
+        hint = getStarBattleHint(puzzle, state);
+      }
       updateAllCells();
       renderHintHost();
     }
@@ -157,6 +175,12 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
       renderStatus();
       renderHintHost();
       renderMessages();
+    }
+
+    function revealErrors() {
+      hint = null;
+      checkBoard();
+      renderHintHost();
     }
 
     function glyphFor(r: number, c: number): string {
@@ -219,12 +243,18 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
     function renderHintHost() {
       clear(hintHost);
       if (hint) {
+        const onApply = hintIsError ? revealErrors : applyHint;
         hintHost.append(
-          renderHintPanel({ title: hint.title, explanation: hint.explanation, primary: [], apply: applyHint }, applyHint, () => {
-            hint = null;
-            updateAllCells();
-            renderHintHost();
-          }),
+          renderHintPanel(
+            { title: hint.title, explanation: hint.explanation, primary: [], apply: onApply },
+            onApply,
+            () => {
+              hint = null;
+              updateAllCells();
+              renderHintHost();
+            },
+            hintIsError ? { applyLabel: 'Näita, mis on valesti', kind: 'error' } : {},
+          ),
         );
       }
     }

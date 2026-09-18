@@ -51,6 +51,7 @@ export function mountSlitherlink(container: HTMLElement, setTitle: (t: string) =
     const { n, clue, solution } = puzzle;
     const state: EdgeState = resume?.state ?? emptyEdgeState(n);
     let hint: SlitherlinkDeduction | null = null;
+    let hintIsError = false;
     let errorEdges = new Set<string>();
     let checkedOk = false;
     let solved = false;
@@ -104,22 +105,36 @@ export function mountSlitherlink(container: HTMLElement, setTitle: (t: string) =
       if (ok) solved = true;
     }
 
-    function checkBoard() {
-      checkSolved();
+    function computeErrors(): Set<string> {
       const bad = new Set<string>();
       for (const e of allEdges(n)) {
         const v = getEdge(state, e);
         if (v !== UNKNOWN && v !== getEdge(solution, e)) bad.add(edgeKey(e));
       }
-      errorEdges = bad;
-      checkedOk = bad.size === 0 && !solved;
+      return bad;
+    }
+
+    function checkBoard() {
+      checkSolved();
+      errorEdges = computeErrors();
+      checkedOk = errorEdges.size === 0 && !solved;
       updateAllEdges();
       renderMessages();
     }
 
     function showHint() {
       if (solved) return;
-      hint = getSlitherlinkHint(puzzle, state);
+      if (computeErrors().size > 0) {
+        hintIsError = true;
+        hint = {
+          title: 'Midagi on praegu valesti',
+          explanation: 'Osa juba lauale märgitud servadest ei klapi õige lahendusega, seega ei saa neist veel edasi vihjata.',
+          assignments: [],
+        };
+      } else {
+        hintIsError = false;
+        hint = getSlitherlinkHint(puzzle, state);
+      }
       updateAllEdges();
       renderHintHost();
     }
@@ -136,6 +151,12 @@ export function mountSlitherlink(container: HTMLElement, setTitle: (t: string) =
       renderStatus();
       renderHintHost();
       renderMessages();
+    }
+
+    function revealErrors() {
+      hint = null;
+      checkBoard();
+      renderHintHost();
     }
 
     function edgeCoords(e: Edge): [number, number, number, number] {
@@ -245,12 +266,18 @@ export function mountSlitherlink(container: HTMLElement, setTitle: (t: string) =
     function renderHintHost() {
       clear(hintHost);
       if (hint) {
+        const onApply = hintIsError ? revealErrors : applyHint;
         hintHost.append(
-          renderHintPanel({ title: hint.title, explanation: hint.explanation, primary: [], apply: applyHint }, applyHint, () => {
-            hint = null;
-            updateAllEdges();
-            renderHintHost();
-          }),
+          renderHintPanel(
+            { title: hint.title, explanation: hint.explanation, primary: [], apply: onApply },
+            onApply,
+            () => {
+              hint = null;
+              updateAllEdges();
+              renderHintHost();
+            },
+            hintIsError ? { applyLabel: 'Näita, mis on valesti', kind: 'error' } : {},
+          ),
         );
       }
     }

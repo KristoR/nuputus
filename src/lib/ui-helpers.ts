@@ -62,10 +62,11 @@ export function renderHintPanel(
   hint: HintStep,
   onApply: (() => void) | null,
   onDismiss: () => void,
+  opts: { applyLabel?: string; kind?: 'hint' | 'error' } = {},
 ): HTMLElement {
   const buttons: HTMLElement[] = [];
   if (onApply) {
-    const applyBtn = el('button', { class: 'primary-btn' }, ['Täida ära']);
+    const applyBtn = el('button', { class: 'primary-btn' }, [opts.applyLabel ?? 'Täida ära']);
     applyBtn.addEventListener('click', onApply);
     buttons.push(applyBtn);
   }
@@ -73,7 +74,7 @@ export function renderHintPanel(
   dismissBtn.addEventListener('click', onDismiss);
   buttons.push(dismissBtn);
 
-  return el('div', { class: 'hint-panel' }, [
+  return el('div', { class: `hint-panel${opts.kind === 'error' ? ' error' : ''}` }, [
     el('h4', {}, [hint.title]),
     el('p', {}, [hint.explanation]),
     el('div', { class: 'hint-actions' }, buttons),
