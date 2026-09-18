@@ -1,9 +1,12 @@
 import { el, clear } from '../../lib/dom';
 import type { Difficulty } from '../../lib/types';
 import { attachPrimarySecondary, difficultyLabel, renderDifficultyPicker, renderHintPanel, renderMessage, toolbarButton } from '../../lib/ui-helpers';
-import { GRASS, TENT, UNKNOWN, emptyPlay, type PlayState } from './core';
+import { clearGame, loadGame, saveGame } from '../../lib/persist';
+import { GRASS, TENT, UNKNOWN, emptyPlay, type PlayState, type TentsPuzzle } from './core';
 import { generateTents } from './generate';
 import { getTentsHint, type TentsDeduction } from './hints';
+
+const GAME_ID = 'tents';
 
 const RULES_HTML = `
   <p><strong>Eesmärk:</strong> aseta igale puule 🌲 üks telk ⛺ vahetult kõrvalasuvasse (mitte diagonaalses) ruutu.</p>
@@ -29,11 +32,12 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
     );
   }
 
-  function startGame(difficulty: Difficulty) {
-    const puzzle = generateTents(difficulty);
+  function startGame(difficulty: Difficulty, resume?: { puzzle: TentsPuzzle; state: PlayState }) {
+    const puzzle = resume?.puzzle ?? generateTents(difficulty);
     const { n, trees, rowClue, colClue, solution } = puzzle;
-    const state: PlayState = emptyPlay(n);
+    const state: PlayState = resume?.state ?? emptyPlay(n);
     let hint: TentsDeduction | null = null;
+    let hintIsError = false;
     let errorCells = new Set<string>();
     let checkedOk = false;
     let solved = false;
@@ -55,6 +59,11 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
       statusLine.append(el('span', {}, [`${difficultyLabel(difficulty)} · ${tentsPlaced()}/${total} telki`]));
     }
 
+    function persist() {
+      if (solved) clearGame(GAME_ID);
+      else saveGame(GAME_ID, { difficulty, puzzle, state });
+    }
+
     function setCell(r: number, c: number, value: number) {
       if (trees[r][c] || solved) return;
       state[r][c] = value;
@@ -62,6 +71,7 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
       checkedOk = false;
       hint = null;
       checkSolved();
+      persist();
       updateAllCells();
       renderStatus();
       renderHintHost();
@@ -82,8 +92,7 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
       if (ok) solved = true;
     }
 
-    function checkBoard() {
-      checkSolved();
+    function computeErrors(): Set<string> {
       const bad = new Set<string>();
       for (let r = 0; r < n; r++) {
         for (let c = 0; c < n; c++) {
@@ -92,15 +101,30 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
           }
         }
       }
-      errorCells = bad;
-      checkedOk = bad.size === 0 && !solved;
+      return bad;
+    }
+
+    function checkBoard() {
+      checkSolved();
+      errorCells = computeErrors();
+      checkedOk = errorCells.size === 0 && !solved;
       updateAllCells();
       renderMessages();
     }
 
     function showHint() {
       if (solved) return;
-      hint = getTentsHint(puzzle, state);
+      if (computeErrors().size > 0) {
+        hintIsError = true;
+        hint = {
+          title: 'Midagi on praegu valesti',
+          explanation: 'Osa juba lauale märgitud ruutudest ei klapi õige lahendusega, seega ei saa neist veel edasi vihjata.',
+          assignments: [],
+        };
+      } else {
+        hintIsError = false;
+        hint = getTentsHint(puzzle, state);
+      }
       updateAllCells();
       renderHintHost();
     }
@@ -112,10 +136,17 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
       errorCells = new Set();
       checkedOk = false;
       checkSolved();
+      persist();
       updateAllCells();
       renderStatus();
       renderHintHost();
       renderMessages();
+    }
+
+    function revealErrors() {
+      hint = null;
+      checkBoard();
+      renderHintHost();
     }
 
     function glyphFor(r: number, c: number): string {
@@ -179,18 +210,31 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
     function renderHintHost() {
       clear(hintHost);
       if (hint) {
+        const onApply = hintIsError ? revealErrors : applyHint;
         hintHost.append(
-          renderHintPanel({ title: hint.title, explanation: hint.explanation, primary: [], apply: applyHint }, applyHint, () => {
-            hint = null;
-            updateAllCells();
-            renderHintHost();
-          }),
+          renderHintPanel(
+            { title: hint.title, explanation: hint.explanation, primary: [], apply: onApply },
+            onApply,
+            () => {
+              hint = null;
+              updateAllCells();
+              renderHintHost();
+            },
+            hintIsError ? { applyLabel: 'Näita, mis on valesti', kind: 'error' } : {},
+          ),
         );
       }
     }
 
     clear(root);
-    toolbar.append(toolbarButton('Vihje', showHint), toolbarButton('Kontrolli', checkBoard), toolbarButton('Uus mäng', showPicker));
+    toolbar.append(
+      toolbarButton('Vihje', showHint),
+      toolbarButton('Kontrolli', checkBoard),
+      toolbarButton('Uus mäng', () => {
+        clearGame(GAME_ID);
+        showPicker();
+      }),
+    );
     const rulesBox = el('details', { class: 'rules-box' });
     rulesBox.append(el('summary', {}, ['⛺ Reeglid']));
     const rulesBody = el('div', {});
@@ -202,7 +246,9 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
     renderStatus();
   }
 
-  showPicker();
+  const saved = loadGame<TentsPuzzle, PlayState>(GAME_ID);
+  if (saved) startGame(saved.difficulty, saved);
+  else showPicker();
 
   return () => {};
 }

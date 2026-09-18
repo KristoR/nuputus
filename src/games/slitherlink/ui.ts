@@ -1,12 +1,14 @@
 import { el, clear, svgEl } from '../../lib/dom';
 import type { Difficulty } from '../../lib/types';
 import { attachPrimarySecondary, difficultyLabel, renderDifficultyPicker, renderHintPanel, renderMessage, toolbarButton } from '../../lib/ui-helpers';
+import { clearGame, loadGame, saveGame } from '../../lib/persist';
 import {
   OFF,
   ON,
   UNKNOWN,
   type Edge,
   type EdgeState,
+  type SlitherlinkPuzzle,
   allEdges,
   edgeKey,
   emptyEdgeState,
@@ -15,6 +17,8 @@ import {
 } from './core';
 import { generateSlitherlink } from './generate';
 import { getSlitherlinkHint, type SlitherlinkDeduction } from './hints';
+
+const GAME_ID = 'slitherlink';
 
 const RULES_HTML = `
   <p><strong>Eesmärk:</strong> tõmba jooni ruudustiku punktide vahele nii, et tekiks üks terviklik, katkematu müür (silmus).</p>
@@ -42,11 +46,12 @@ export function mountSlitherlink(container: HTMLElement, setTitle: (t: string) =
     );
   }
 
-  function startGame(difficulty: Difficulty) {
-    const puzzle = generateSlitherlink(difficulty);
+  function startGame(difficulty: Difficulty, resume?: { puzzle: SlitherlinkPuzzle; state: EdgeState }) {
+    const puzzle = resume?.puzzle ?? generateSlitherlink(difficulty);
     const { n, clue, solution } = puzzle;
-    const state: EdgeState = emptyEdgeState(n);
+    const state: EdgeState = resume?.state ?? emptyEdgeState(n);
     let hint: SlitherlinkDeduction | null = null;
+    let hintIsError = false;
     let errorEdges = new Set<string>();
     let checkedOk = false;
     let solved = false;
@@ -67,6 +72,11 @@ export function mountSlitherlink(container: HTMLElement, setTitle: (t: string) =
       statusLine.append(el('span', {}, [`${difficultyLabel(difficulty)} · ${onEdgeCount()} joont tõmmatud`]));
     }
 
+    function persist() {
+      if (solved) clearGame(GAME_ID);
+      else saveGame(GAME_ID, { difficulty, puzzle, state });
+    }
+
     function setEdgeValue(e: Edge, value: number) {
       if (solved) return;
       setEdge(state, e, value);
@@ -74,6 +84,7 @@ export function mountSlitherlink(container: HTMLElement, setTitle: (t: string) =
       checkedOk = false;
       hint = null;
       checkSolved();
+      persist();
       updateAllEdges();
       renderStatus();
       renderHintHost();
@@ -94,22 +105,36 @@ export function mountSlitherlink(container: HTMLElement, setTitle: (t: string) =
       if (ok) solved = true;
     }
 
-    function checkBoard() {
-      checkSolved();
+    function computeErrors(): Set<string> {
       const bad = new Set<string>();
       for (const e of allEdges(n)) {
         const v = getEdge(state, e);
         if (v !== UNKNOWN && v !== getEdge(solution, e)) bad.add(edgeKey(e));
       }
-      errorEdges = bad;
-      checkedOk = bad.size === 0 && !solved;
+      return bad;
+    }
+
+    function checkBoard() {
+      checkSolved();
+      errorEdges = computeErrors();
+      checkedOk = errorEdges.size === 0 && !solved;
       updateAllEdges();
       renderMessages();
     }
 
     function showHint() {
       if (solved) return;
-      hint = getSlitherlinkHint(puzzle, state);
+      if (computeErrors().size > 0) {
+        hintIsError = true;
+        hint = {
+          title: 'Midagi on praegu valesti',
+          explanation: 'Osa juba lauale märgitud servadest ei klapi õige lahendusega, seega ei saa neist veel edasi vihjata.',
+          assignments: [],
+        };
+      } else {
+        hintIsError = false;
+        hint = getSlitherlinkHint(puzzle, state);
+      }
       updateAllEdges();
       renderHintHost();
     }
@@ -121,10 +146,17 @@ export function mountSlitherlink(container: HTMLElement, setTitle: (t: string) =
       errorEdges = new Set();
       checkedOk = false;
       checkSolved();
+      persist();
       updateAllEdges();
       renderStatus();
       renderHintHost();
       renderMessages();
+    }
+
+    function revealErrors() {
+      hint = null;
+      checkBoard();
+      renderHintHost();
     }
 
     function edgeCoords(e: Edge): [number, number, number, number] {
@@ -234,18 +266,31 @@ export function mountSlitherlink(container: HTMLElement, setTitle: (t: string) =
     function renderHintHost() {
       clear(hintHost);
       if (hint) {
+        const onApply = hintIsError ? revealErrors : applyHint;
         hintHost.append(
-          renderHintPanel({ title: hint.title, explanation: hint.explanation, primary: [], apply: applyHint }, applyHint, () => {
-            hint = null;
-            updateAllEdges();
-            renderHintHost();
-          }),
+          renderHintPanel(
+            { title: hint.title, explanation: hint.explanation, primary: [], apply: onApply },
+            onApply,
+            () => {
+              hint = null;
+              updateAllEdges();
+              renderHintHost();
+            },
+            hintIsError ? { applyLabel: 'Näita, mis on valesti', kind: 'error' } : {},
+          ),
         );
       }
     }
 
     clear(root);
-    toolbar.append(toolbarButton('Vihje', showHint), toolbarButton('Kontrolli', checkBoard), toolbarButton('Uus mäng', showPicker));
+    toolbar.append(
+      toolbarButton('Vihje', showHint),
+      toolbarButton('Kontrolli', checkBoard),
+      toolbarButton('Uus mäng', () => {
+        clearGame(GAME_ID);
+        showPicker();
+      }),
+    );
     const rulesBox = el('details', { class: 'rules-box' });
     rulesBox.append(el('summary', {}, ['🧱 Reeglid']));
     const rulesBody = el('div', {});
@@ -257,7 +302,9 @@ export function mountSlitherlink(container: HTMLElement, setTitle: (t: string) =
     renderStatus();
   }
 
-  showPicker();
+  const saved = loadGame<SlitherlinkPuzzle, EdgeState>(GAME_ID);
+  if (saved) startGame(saved.difficulty, saved);
+  else showPicker();
 
   return () => {};
 }

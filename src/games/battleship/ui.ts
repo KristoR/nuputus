@@ -1,9 +1,12 @@
 import { el, clear } from '../../lib/dom';
 import type { Difficulty } from '../../lib/types';
 import { attachPrimarySecondary, difficultyLabel, renderDifficultyPicker, renderHintPanel, renderMessage, toolbarButton } from '../../lib/ui-helpers';
-import { SHIP, UNKNOWN, WATER, cloneOrEmpty, shipShapeClass, type PlayState } from './core';
+import { clearGame, loadGame, saveGame } from '../../lib/persist';
+import { SHIP, UNKNOWN, WATER, cloneOrEmpty, shipShapeClass, type BattleshipPuzzle, type PlayState } from './core';
 import { generateBattleship } from './generate';
 import { getBattleshipHint, type BattleshipDeduction } from './hints';
+
+const GAME_ID = 'battleship';
 
 const RULES_HTML = `
   <p><strong>Eesmärk:</strong> leia ookeani peidetud laevastik. Laevad on horisontaalsed või vertikaalsed ega puutu teineteist, ka mitte nurgapidi.</p>
@@ -31,11 +34,12 @@ export function mountBattleship(container: HTMLElement, setTitle: (t: string) =>
     );
   }
 
-  function startGame(difficulty: Difficulty) {
-    const puzzle = generateBattleship(difficulty);
+  function startGame(difficulty: Difficulty, resume?: { puzzle: BattleshipPuzzle; state: PlayState }) {
+    const puzzle = resume?.puzzle ?? generateBattleship(difficulty);
     const { n, fleet, rowClue, colClue, solution, givens } = puzzle;
-    const state: PlayState = cloneOrEmpty(givens, n);
+    const state: PlayState = resume?.state ?? cloneOrEmpty(givens, n);
     let hint: BattleshipDeduction | null = null;
+    let hintIsError = false;
     let errorCells = new Set<string>();
     let checkedOk = false;
     let solved = false;
@@ -75,6 +79,11 @@ export function mountBattleship(container: HTMLElement, setTitle: (t: string) =>
       fleetHost.append(...items);
     }
 
+    function persist() {
+      if (solved) clearGame(GAME_ID);
+      else saveGame(GAME_ID, { difficulty, puzzle, state });
+    }
+
     function setCell(r: number, c: number, value: number) {
       if (solved || givens[r][c] !== UNKNOWN) return;
       state[r][c] = value;
@@ -82,6 +91,7 @@ export function mountBattleship(container: HTMLElement, setTitle: (t: string) =>
       checkedOk = false;
       hint = null;
       checkSolved();
+      persist();
       updateAllCells();
       renderStatus();
       renderHintHost();
@@ -102,23 +112,37 @@ export function mountBattleship(container: HTMLElement, setTitle: (t: string) =>
       if (ok) solved = true;
     }
 
-    function checkBoard() {
-      checkSolved();
+    function computeErrors(): Set<string> {
       const bad = new Set<string>();
       for (let r = 0; r < n; r++) {
         for (let c = 0; c < n; c++) {
           if (state[r][c] !== UNKNOWN && state[r][c] !== solution[r][c]) bad.add(`${r},${c}`);
         }
       }
-      errorCells = bad;
-      checkedOk = bad.size === 0 && !solved;
+      return bad;
+    }
+
+    function checkBoard() {
+      checkSolved();
+      errorCells = computeErrors();
+      checkedOk = errorCells.size === 0 && !solved;
       updateAllCells();
       renderMessages();
     }
 
     function showHint() {
       if (solved) return;
-      hint = getBattleshipHint(puzzle, state);
+      if (computeErrors().size > 0) {
+        hintIsError = true;
+        hint = {
+          title: 'Midagi on praegu valesti',
+          explanation: 'Osa juba lauale märgitud ruutudest ei klapi õige lahendusega, seega ei saa neist veel edasi vihjata.',
+          assignments: [],
+        };
+      } else {
+        hintIsError = false;
+        hint = getBattleshipHint(puzzle, state);
+      }
       updateAllCells();
       renderHintHost();
     }
@@ -130,10 +154,17 @@ export function mountBattleship(container: HTMLElement, setTitle: (t: string) =>
       errorCells = new Set();
       checkedOk = false;
       checkSolved();
+      persist();
       updateAllCells();
       renderStatus();
       renderHintHost();
       renderMessages();
+    }
+
+    function revealErrors() {
+      hint = null;
+      checkBoard();
+      renderHintHost();
     }
 
     function updateCell(r: number, c: number) {
@@ -194,18 +225,31 @@ export function mountBattleship(container: HTMLElement, setTitle: (t: string) =>
     function renderHintHost() {
       clear(hintHost);
       if (hint) {
+        const onApply = hintIsError ? revealErrors : applyHint;
         hintHost.append(
-          renderHintPanel({ title: hint.title, explanation: hint.explanation, primary: [], apply: applyHint }, applyHint, () => {
-            hint = null;
-            updateAllCells();
-            renderHintHost();
-          }),
+          renderHintPanel(
+            { title: hint.title, explanation: hint.explanation, primary: [], apply: onApply },
+            onApply,
+            () => {
+              hint = null;
+              updateAllCells();
+              renderHintHost();
+            },
+            hintIsError ? { applyLabel: 'Näita, mis on valesti', kind: 'error' } : {},
+          ),
         );
       }
     }
 
     clear(root);
-    toolbar.append(toolbarButton('Vihje', showHint), toolbarButton('Kontrolli', checkBoard), toolbarButton('Uus mäng', showPicker));
+    toolbar.append(
+      toolbarButton('Vihje', showHint),
+      toolbarButton('Kontrolli', checkBoard),
+      toolbarButton('Uus mäng', () => {
+        clearGame(GAME_ID);
+        showPicker();
+      }),
+    );
     renderFleetLegend();
     const rulesBox = el('details', { class: 'rules-box' });
     rulesBox.append(el('summary', {}, ['🚢 Reeglid']));
@@ -218,7 +262,9 @@ export function mountBattleship(container: HTMLElement, setTitle: (t: string) =>
     renderStatus();
   }
 
-  showPicker();
+  const saved = loadGame<BattleshipPuzzle, PlayState>(GAME_ID);
+  if (saved) startGame(saved.difficulty, saved);
+  else showPicker();
 
   return () => {};
 }
