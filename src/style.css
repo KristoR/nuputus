@@ -335,6 +335,39 @@ main {
   flex: 1;
 }
 
+.hint-stepper-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.hint-stepper-nav button {
+  background: var(--paper-card);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 999px;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.hint-stepper-nav button:disabled {
+  opacity: 0.35;
+}
+
+.hint-stepper-nav .hint-stepper-count {
+  font-size: 0.82rem;
+  color: var(--ink-dim);
+  min-width: 3.2rem;
+  text-align: center;
+}
+
 .message-banner {
   border-radius: var(--radius);
   padding: 0.8rem 1rem;
@@ -526,6 +559,9 @@ footer.app-footer {
 .starbattle-cell.empty-mark { color: var(--ink-faint); }
 .starbattle-cell.hint-primary { box-shadow: inset 0 0 0 3px #c98a2b; }
 .starbattle-cell.error { box-shadow: inset 0 0 0 3px var(--bad); }
+.starbattle-cell.hint-step-visited { box-shadow: inset 0 0 0 2px var(--accent); opacity: 0.85; }
+.starbattle-cell.hint-step-current { box-shadow: inset 0 0 0 4px var(--accent); }
+.starbattle-cell.hint-step-current.hint-primary { box-shadow: inset 0 0 0 4px #c98a2b; }
 
 /* ---------- Battleship ---------- */
 .fleet-legend {

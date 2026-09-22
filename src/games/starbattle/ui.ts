@@ -71,6 +71,7 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
     const state: PlayState = resumeState ?? emptyPlay(n);
     let hint: StarBattleDeduction | null = null;
     let hintIsError = false;
+    let hintStepIndex = 0;
     let errorCells = new Set<string>();
     let checkedOk = false;
     let solved = false;
@@ -145,6 +146,7 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
 
     function showHint() {
       if (solved) return;
+      hintStepIndex = 0;
       // A hint reasons forward from the board as it stands, so if something
       // already on the board is wrong, check that first rather than build
       // a "logical" hint on top of a mistake.
@@ -198,7 +200,18 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
       if (c === 0 || regions[r][c - 1] !== region) classes.push('border-left');
       if (r === n - 1 || regions[r + 1][c] !== region) classes.push('border-bottom');
       if (c === n - 1 || regions[r][c + 1] !== region) classes.push('border-right');
-      if (hint?.assignments.some((a) => a.r === r && a.c === c)) classes.push('hint-primary');
+      if (hint?.steps) {
+        // Only reveal the actual answer highlight once the player has
+        // stepped all the way to the conclusion, not before.
+        const onLastStep = hintStepIndex === hint.steps.length - 1;
+        if (onLastStep && hint.assignments.some((a) => a.r === r && a.c === c)) classes.push('hint-primary');
+        if (hint.steps[hintStepIndex].cells.some(([sr, sc]) => sr === r && sc === c)) classes.push('hint-step-current');
+        else if (hint.steps.slice(0, hintStepIndex).some((s) => s.cells.some(([sr, sc]) => sr === r && sc === c))) {
+          classes.push('hint-step-visited');
+        }
+      } else if (hint?.assignments.some((a) => a.r === r && a.c === c)) {
+        classes.push('hint-primary');
+      }
       if (errorCells.has(key)) classes.push('error');
       if (state[r][c] === EMPTY) classes.push('empty-mark');
 
@@ -240,23 +253,71 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
       else if (checkedOk) messageHost.append(renderMessage('info', 'Seni märgitud ruudud on õiged — jätka!'));
     }
 
+    function dismissHint() {
+      hint = null;
+      updateAllCells();
+      renderHintHost();
+    }
+
+    function renderSteppedHintPanel(steps: NonNullable<StarBattleDeduction['steps']>): HTMLElement {
+      const onLastStep = hintStepIndex === steps.length - 1;
+
+      const prevBtn = el('button', {}, ['‹']);
+      prevBtn.disabled = hintStepIndex === 0;
+      prevBtn.addEventListener('click', () => {
+        hintStepIndex = Math.max(0, hintStepIndex - 1);
+        updateAllCells();
+        renderHintHost();
+      });
+
+      const nextBtn = el('button', {}, ['›']);
+      nextBtn.disabled = onLastStep;
+      nextBtn.addEventListener('click', () => {
+        hintStepIndex = Math.min(steps.length - 1, hintStepIndex + 1);
+        updateAllCells();
+        renderHintHost();
+      });
+
+      const nav = el('div', { class: 'hint-stepper-nav' }, [
+        prevBtn,
+        el('span', { class: 'hint-stepper-count' }, [`samm ${hintStepIndex + 1}/${steps.length}`]),
+        nextBtn,
+      ]);
+
+      const buttons: HTMLElement[] = [];
+      if (onLastStep) {
+        const applyBtn = el('button', { class: 'primary-btn' }, ['Täida ära']);
+        applyBtn.addEventListener('click', applyHint);
+        buttons.push(applyBtn);
+      }
+      const dismissBtn = el('button', { class: 'secondary-btn' }, ['Selge']);
+      dismissBtn.addEventListener('click', dismissHint);
+      buttons.push(dismissBtn);
+
+      return el('div', { class: 'hint-panel' }, [
+        el('h4', {}, [hint!.title]),
+        nav,
+        el('p', {}, [steps[hintStepIndex].text]),
+        el('div', { class: 'hint-actions' }, buttons),
+      ]);
+    }
+
     function renderHintHost() {
       clear(hintHost);
-      if (hint) {
-        const onApply = hintIsError ? revealErrors : applyHint;
-        hintHost.append(
-          renderHintPanel(
-            { title: hint.title, explanation: hint.explanation, primary: [], apply: onApply },
-            onApply,
-            () => {
-              hint = null;
-              updateAllCells();
-              renderHintHost();
-            },
-            hintIsError ? { applyLabel: 'Näita, mis on valesti', kind: 'error' } : {},
-          ),
-        );
+      if (!hint) return;
+      if (hint.steps && hint.steps.length > 0) {
+        hintHost.append(renderSteppedHintPanel(hint.steps));
+        return;
       }
+      const onApply = hintIsError ? revealErrors : applyHint;
+      hintHost.append(
+        renderHintPanel(
+          { title: hint.title, explanation: hint.explanation, primary: [], apply: onApply },
+          onApply,
+          dismissHint,
+          hintIsError ? { applyLabel: 'Näita, mis on valesti', kind: 'error' } : {},
+        ),
+      );
     }
 
     clear(root);

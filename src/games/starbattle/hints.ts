@@ -11,10 +11,17 @@ import {
 } from './core';
 import { solveStarBattle } from './solve';
 
+export interface HintNarrationStep {
+  cells: [number, number][];
+  text: string;
+}
+
 export interface StarBattleDeduction {
   title: string;
   explanation: string;
   assignments: { r: number; c: number; value: number }[];
+  /** For deductions built from a reasoning chain: the same explanation broken into steps to walk through one at a time, each pointing at the cell(s) it concerns. */
+  steps?: HintNarrationStep[];
 }
 
 type Unit = { cells: [number, number][]; label: string };
@@ -183,15 +190,16 @@ function findViolation(puzzle: StarBattlePuzzle, state: PlayState): string | nul
   return null;
 }
 
-type ChainStep = { r: number; c: number; value: number };
+/** One rule firing during propagation: every cell it forced, all to the same value (each technique only ever assigns one kind of value per firing). */
+type ChainGroup = { cells: [number, number][]; value: number; ruleTitle: string };
 
-/** Repeatedly applies the cheap techniques starting from `initial`, recording each forced cell, until either a rule violation appears or nothing more can be deduced. */
+/** Repeatedly applies the cheap techniques starting from `initial`, recording each rule firing as a group, until either a rule violation appears or nothing more can be deduced. */
 function propagateSimple(
   puzzle: StarBattlePuzzle,
   initial: PlayState,
-): { chain: ChainStep[]; violation: string | null } {
+): { chain: ChainGroup[]; violation: string | null } {
   const state = initial.map((row) => row.slice());
-  const chain: ChainStep[] = [];
+  const chain: ChainGroup[] = [];
   let violation = findViolation(puzzle, state);
   while (!violation) {
     const step =
@@ -200,20 +208,47 @@ function propagateSimple(
       findUnitForcedFill(puzzle, state) ??
       findRegionLineReduction(puzzle, state);
     if (!step) break;
-    for (const a of step.assignments) {
-      state[a.r][a.c] = a.value;
-      chain.push({ r: a.r, c: a.c, value: a.value });
-    }
+    for (const a of step.assignments) state[a.r][a.c] = a.value;
+    chain.push({
+      cells: step.assignments.map((a): [number, number] => [a.r, a.c]),
+      value: step.assignments[0].value,
+      ruleTitle: step.title,
+    });
     violation = findViolation(puzzle, state);
   }
   return { chain, violation };
 }
 
-function describeChain(chain: ChainStep[]): string {
-  const shown = chain.slice(0, 4).map((s) => `(rida ${s.r + 1}, veerg ${s.c + 1}) ${s.value === STAR ? 'täheks' : 'tähetuks'}`);
-  let text = shown.join(', siis ');
-  if (chain.length > shown.length) text += `, ja veel ${chain.length - shown.length} sammu kaudu`;
-  return text;
+function describeCells(cells: [number, number][]): string {
+  const single = cells.length === 1;
+  const list = cells.map(([r, c]) => `(rida ${r + 1}, veerg ${c + 1})`).join(', ');
+  return single ? `ruut ${list}` : `ruudud ${list}`;
+}
+
+/** Turns a propagation chain into narration steps to walk through one at a time, each pointing at the cell(s) it concerns. */
+function buildChainSteps(
+  hypothesisCell: [number, number],
+  hypothesisValue: number,
+  chain: ChainGroup[],
+  violation: string,
+  conclusionValue: number,
+): HintNarrationStep[] {
+  const [hr, hc] = hypothesisCell;
+  const steps: HintNarrationStep[] = [];
+  steps.push({
+    cells: [hypothesisCell],
+    text: `Proovime: mis juhtuks, kui ruut (rida ${hr + 1}, veerg ${hc + 1}) oleks ${hypothesisValue === STAR ? 'täht' : 'tähetu'}?`,
+  });
+  for (const group of chain) {
+    const verb = group.value === STAR ? (group.cells.length === 1 ? 'peab olema täht' : 'peavad olema tähed') : group.cells.length === 1 ? 'peab jääma tähetuks' : 'peavad jääma tähetuks';
+    steps.push({ cells: group.cells, text: `${group.ruleTitle}: ${describeCells(group.cells)} ${verb}.` });
+  }
+  steps.push({ cells: [hypothesisCell], text: `Aga siis ${violation} — see on võimatu.` });
+  steps.push({
+    cells: [hypothesisCell],
+    text: `Seega ruut (rida ${hr + 1}, veerg ${hc + 1}) peab tegelikult olema ${conclusionValue === STAR ? 'täht' : 'tähetu'}.`,
+  });
+  return steps;
 }
 
 /**
@@ -237,21 +272,21 @@ function findChainContradiction(puzzle: StarBattlePuzzle, state: PlayState): Sta
     const emptyResult = propagateSimple(puzzle, asEmpty);
 
     if (starResult.violation && !emptyResult.violation) {
-      const chainText = describeChain(starResult.chain);
-      const lead = chainText ? `Kui ruut (rida ${r + 1}, veerg ${c + 1}) oleks täht, siis kordamööda: ${chainText}. Aga siis ` : `Kui ruut (rida ${r + 1}, veerg ${c + 1}) oleks täht, siis `;
+      const steps = buildChainSteps([r, c], STAR, starResult.chain, starResult.violation, EMPTY);
       return {
         title: 'Loogiline tuletus',
-        explanation: `${lead}${starResult.violation} — see on võimatu, seega peab ruut jääma tähetuks.`,
+        explanation: steps[steps.length - 1].text,
         assignments: [{ r, c, value: EMPTY }],
+        steps,
       };
     }
     if (emptyResult.violation && !starResult.violation) {
-      const chainText = describeChain(emptyResult.chain);
-      const lead = chainText ? `Kui ruut (rida ${r + 1}, veerg ${c + 1}) jääks tähetuks, siis kordamööda: ${chainText}. Aga siis ` : `Kui ruut (rida ${r + 1}, veerg ${c + 1}) jääks tähetuks, siis `;
+      const steps = buildChainSteps([r, c], EMPTY, emptyResult.chain, emptyResult.violation, STAR);
       return {
         title: 'Loogiline tuletus',
-        explanation: `${lead}${emptyResult.violation} — see on võimatu, seega peab siin olema täht.`,
+        explanation: steps[steps.length - 1].text,
         assignments: [{ r, c, value: STAR }],
+        steps,
       };
     }
   }
