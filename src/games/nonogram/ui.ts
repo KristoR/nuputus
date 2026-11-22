@@ -2,6 +2,7 @@ import { el, clear } from '../../lib/dom';
 import type { Difficulty } from '../../lib/types';
 import { difficultyLabel, renderDifficultyPicker, renderHintPanel, renderMessage, toolbarButton } from '../../lib/ui-helpers';
 import { clearGame, loadGame, saveGame } from '../../lib/persist';
+import { attachBrush, renderToolToggle } from '../../lib/paint';
 import { EMPTY, FILLED, UNKNOWN, emptyGrid, getCol, getRow, runsOf, sameClue, type Grid, type NonogramPuzzle } from './core';
 import { generateNonogram } from './generate';
 import { getNonogramHint, type NonogramDeduction } from './hints';
@@ -11,7 +12,7 @@ const GAME_ID = 'nonogram';
 const RULES_HTML = `
   <p><strong>Eesmärk:</strong> värvi ruudud mustaks nii, et välja ilmub pilt.</p>
   <p>Numbrid rea ees ja veeru kohal ütlevad, mitu järjestikust musta ruutu seal on ja mis järjekorras. Näiteks <strong>3 1</strong> tähendab: kõigepealt 3 musta ruutu järjest, siis vähemalt üks tühi, siis 1 must.</p>
-  <p>Vali all tööriist: <strong>■ Must</strong> või <strong>• Tühi</strong>. Puuduta ruutu või vea sõrmega üle mitme ruudu korraga. Hiirega paremklõps märgib tühja ruudu. Kui rida on õigesti täidetud, muutub selle vihje halliks.</p>
+  <p>Vali all tööriist: <strong>■ Must</strong> või <strong>• Tühi</strong>. Puuduta ruutu või vea sõrmega üle mitme ruudu korraga. Pikk vajutus (või paremklõps, või Shift) kasutab teist tööriista, ka lohistades. Klaviatuuril vahetab tööriista tühik või X. Kui rida on õigesti täidetud, muutub selle vihje halliks.</p>
 `;
 
 export function mountNonogram(container: HTMLElement, setTitle: (t: string) => void): () => void {
@@ -19,8 +20,11 @@ export function mountNonogram(container: HTMLElement, setTitle: (t: string) => v
 
   const root = el('div', { class: 'game-screen' });
   container.append(root);
+  let disposeTools: (() => void) | null = null;
 
   function showPicker() {
+    disposeTools?.();
+    disposeTools = null;
     clear(root);
     root.append(
       renderDifficultyPicker({
@@ -47,7 +51,6 @@ export function mountNonogram(container: HTMLElement, setTitle: (t: string) => v
     const toolbar = el('div', { class: 'toolbar' });
     const statusLine = el('div', { class: 'status-line' });
     const boardWrap = el('div', { class: 'board-wrap' });
-    const toolRow = el('div', { class: 'difficulty-row nonogram-tools' });
     const hintHost = el('div', {});
     const messageHost = el('div', {});
     const cellEls: HTMLDivElement[][] = [];
@@ -119,62 +122,6 @@ export function mountNonogram(container: HTMLElement, setTitle: (t: string) => v
       renderMessages();
     }
 
-    // ---- Painting: press on a cell, drag along its row or column. ----
-    // The first cell decides the action: if it already has the tool's mark
-    // the drag erases that mark, otherwise it paints the mark onto cells
-    // that are still blank (never overwriting the other kind of mark).
-    let drag: { value: number; mark: number; r0: number; c0: number; axis: 'row' | 'col' | null; pointerId: number } | null = null;
-
-    function paint(r: number, c: number) {
-      if (!drag) return;
-      const v = state[r][c];
-      if (drag.value === UNKNOWN ? v === drag.mark : v === UNKNOWN) {
-        state[r][c] = drag.value;
-        updateCell(r, c);
-      }
-    }
-
-    function cellAt(x: number, y: number): [number, number] | null {
-      const target = document.elementFromPoint(x, y) as HTMLElement | null;
-      if (!target?.dataset?.r) return null;
-      return [Number(target.dataset.r), Number(target.dataset.c)];
-    }
-
-    function onPointerDown(e: PointerEvent) {
-      if (solved) return;
-      const hit = cellAt(e.clientX, e.clientY);
-      if (!hit) return;
-      e.preventDefault();
-      const [r, c] = hit;
-      const mark = e.button === 2 ? EMPTY : tool;
-      drag = { value: state[r][c] === mark ? UNKNOWN : mark, mark, r0: r, c0: c, axis: null, pointerId: e.pointerId };
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-      paint(r, c);
-    }
-
-    function onPointerMove(e: PointerEvent) {
-      if (!drag || e.pointerId !== drag.pointerId) return;
-      const hit = cellAt(e.clientX, e.clientY);
-      if (!hit) return;
-      let [r, c] = hit;
-      if (!drag.axis) {
-        if (r === drag.r0 && c === drag.c0) return;
-        drag.axis = Math.abs(r - drag.r0) > Math.abs(c - drag.c0) ? 'col' : 'row';
-      }
-      if (drag.axis === 'row') r = drag.r0;
-      else c = drag.c0;
-      // Fill every cell between the start and here, so a fast swipe that
-      // skips over cells between pointer events doesn't leave gaps.
-      if (drag.axis === 'row') for (let cc = Math.min(c, drag.c0); cc <= Math.max(c, drag.c0); cc++) paint(r, cc);
-      else for (let rr = Math.min(r, drag.r0); rr <= Math.max(r, drag.r0); rr++) paint(rr, c);
-    }
-
-    function onPointerUp(e: PointerEvent) {
-      if (!drag || e.pointerId !== drag.pointerId) return;
-      drag = null;
-      afterChange();
-    }
-
     function showHint() {
       if (solved) return;
       if (computeErrors().size > 0) {
@@ -237,21 +184,6 @@ export function mountNonogram(container: HTMLElement, setTitle: (t: string) => v
       else if (checkedOk) messageHost.append(renderMessage('info', 'Seni märgitud ruudud on õiged — jätka!'));
     }
 
-    function renderTools() {
-      clear(toolRow);
-      for (const [value, label] of [
-        [FILLED, '■ Must'],
-        [EMPTY, '• Tühi'],
-      ] as [number, string][]) {
-        const btn = el('button', { class: `pill-btn${tool === value ? ' active' : ''}` }, [label]);
-        btn.addEventListener('click', () => {
-          tool = value;
-          renderTools();
-        });
-        toolRow.append(btn);
-      }
-    }
-
     function buildBoard() {
       clear(boardWrap);
       const maxRowClue = Math.max(1, ...rowClues.map((c) => c.length));
@@ -285,11 +217,19 @@ export function mountNonogram(container: HTMLElement, setTitle: (t: string) => v
         }
       }
 
-      grid.addEventListener('pointerdown', onPointerDown);
-      grid.addEventListener('pointermove', onPointerMove);
-      grid.addEventListener('pointerup', onPointerUp);
-      grid.addEventListener('pointercancel', onPointerUp);
-      grid.addEventListener('contextmenu', (e) => e.preventDefault());
+      attachBrush({
+        grid,
+        get: (r, c) => state[r][c],
+        set: (r, c, v) => {
+          state[r][c] = v;
+          updateCell(r, c);
+        },
+        tool: () => tool,
+        opposite: (m) => (m === FILLED ? EMPTY : FILLED),
+        axisLock: true,
+        locked: () => solved,
+        onCommit: afterChange,
+      });
       boardWrap.append(grid);
       updateAll();
     }
@@ -309,8 +249,20 @@ export function mountNonogram(container: HTMLElement, setTitle: (t: string) => v
     rulesBody.innerHTML = RULES_HTML;
     rulesBox.append(rulesBody);
 
-    root.append(toolbar, statusLine, boardWrap, toolRow, hintHost, messageHost, rulesBox);
-    renderTools();
+    disposeTools?.();
+    const tools = renderToolToggle({
+      tools: [
+        { value: FILLED, label: '■ Must' },
+        { value: EMPTY, label: '• Tühi' },
+      ],
+      get: () => tool,
+      set: (v) => {
+        tool = v;
+      },
+    });
+    disposeTools = tools.dispose;
+
+    root.append(toolbar, statusLine, boardWrap, tools.element, hintHost, messageHost, rulesBox);
     buildBoard();
     checkSolved();
     renderStatus();
@@ -321,5 +273,7 @@ export function mountNonogram(container: HTMLElement, setTitle: (t: string) => v
   if (saved) startGame(saved.difficulty, { puzzle: saved.puzzle, state: saved.state });
   else showPicker();
 
-  return () => {};
+  return () => {
+    disposeTools?.();
+  };
 }

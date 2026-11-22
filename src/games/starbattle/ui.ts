@@ -1,7 +1,8 @@
 import { el, clear } from '../../lib/dom';
 import type { Level } from '../../lib/types';
-import { attachPrimarySecondary, difficultyLabel, renderDifficultyPicker, renderHintPanel, renderMessage, toolbarButton } from '../../lib/ui-helpers';
+import { difficultyLabel, renderDifficultyPicker, renderHintPanel, renderMessage, toolbarButton } from '../../lib/ui-helpers';
 import { clearGame, loadGame, loadPref, savePref, saveGame } from '../../lib/persist';
+import { attachBrush, renderToolToggle } from '../../lib/paint';
 import { EMPTY, STAR, UNKNOWN, emptyPlay, type PlayState, type StarBattlePuzzle } from './core';
 import { generateStarBattleAsync, type StarCount } from './generate';
 import { getStarBattleHint, type StarBattleDeduction } from './hints';
@@ -19,7 +20,7 @@ function rulesHtml(stars: number | null): string {
   return `
     <p><strong>Eesmärk:</strong> ${goal}.</p>
     <p>Tähed ei tohi teineteist puutuda ka mitte nurga pealt.</p>
-    <p>Puuduta ruutu, et sinna tuleks täht. Hoia all (või paremklõpsa hiirega), et märkida ruut kindlasti tähetuks (×). Kasuta <strong>Vihjet</strong>, kui jääd kinni.</p>
+    <p>Vali all tööriist: <strong>⭐ Täht</strong> või <strong>× Tühi</strong>. Tühja tööriistaga saab sõrme lohistades märkida mitu ruutu korraga. Pikk vajutus (või paremklõps, või Shift) kasutab teist tööriista. Klaviatuuril vahetab tööriista tühik või X. Kasuta <strong>Vihjet</strong>, kui jääd kinni.</p>
   `;
 }
 
@@ -30,8 +31,11 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
 
   const root = el('div', { class: 'game-screen' });
   container.append(root);
+  let disposeTools: (() => void) | null = null;
 
   function showPicker() {
+    disposeTools?.();
+    disposeTools = null;
     clear(root);
     let stars: StarCount = loadPref(GAME_ID + ':stars') === '1' ? 1 : 2;
 
@@ -112,9 +116,10 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
       else saveGame(GAME_ID, { difficulty, puzzle, state });
     }
 
-    function setCell(r: number, c: number, value: number) {
-      if (solved) return;
-      state[r][c] = value;
+    let tool = STAR;
+
+    /** After a gesture changed the board: drop stale hint/check results and refresh once. */
+    function afterChange() {
       errorCells = new Set();
       checkedOk = false;
       hint = null;
@@ -124,14 +129,6 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
       renderStatus();
       renderHintHost();
       renderMessages();
-    }
-
-    function togglePrimary(r: number, c: number) {
-      setCell(r, c, state[r][c] === STAR ? UNKNOWN : STAR);
-    }
-
-    function toggleSecondary(r: number, c: number) {
-      setCell(r, c, state[r][c] === EMPTY ? UNKNOWN : EMPTY);
     }
 
     /** Solved once every star matches the solution — X marks are just an optional aid. */
@@ -234,16 +231,30 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
         cellEls[r] = [];
         for (let c = 0; c < n; c++) {
           const region = regions[r][c];
-          const cell = el('button', { class: 'starbattle-cell', style: `background:${PALETTE[region % PALETTE.length]}` });
-          attachPrimarySecondary(
-            cell,
-            () => togglePrimary(r, c),
-            () => toggleSecondary(r, c),
-          );
+          const cell = el('button', {
+            class: 'starbattle-cell',
+            style: `background:${PALETTE[region % PALETTE.length]}`,
+            'data-r': String(r),
+            'data-c': String(c),
+          });
           cellEls[r][c] = cell;
           grid.append(cell);
         }
       }
+      attachBrush({
+        grid,
+        get: (r, c) => state[r][c],
+        set: (r, c, v) => {
+          state[r][c] = v;
+          updateCell(r, c);
+        },
+        tool: () => tool,
+        opposite: (m) => (m === STAR ? EMPTY : STAR),
+        // Stars can never touch, so only × marks spread along a drag.
+        canDrag: (m) => m === EMPTY,
+        locked: () => solved,
+        onCommit: afterChange,
+      });
       boardWrap.append(grid);
       updateAllCells();
     }
@@ -289,7 +300,20 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
     rulesBody.innerHTML = rulesHtml(stars);
     rulesBox.append(rulesBody);
 
-    root.append(toolbar, statusLine, boardWrap, hintHost, messageHost, rulesBox);
+    disposeTools?.();
+    const tools = renderToolToggle({
+      tools: [
+        { value: STAR, label: '⭐ Täht' },
+        { value: EMPTY, label: '× Tühi' },
+      ],
+      get: () => tool,
+      set: (v) => {
+        tool = v;
+      },
+    });
+    disposeTools = tools.dispose;
+
+    root.append(toolbar, statusLine, boardWrap, tools.element, hintHost, messageHost, rulesBox);
     buildBoard();
     renderStatus();
   }
@@ -300,5 +324,6 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
 
   return () => {
     generation++;
+    disposeTools?.();
   };
 }
