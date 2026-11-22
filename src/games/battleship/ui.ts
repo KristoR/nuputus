@@ -26,6 +26,7 @@ export function mountBattleship(container: HTMLElement, setTitle: (t: string) =>
     clear(root);
     root.append(
       renderDifficultyPicker({
+        prefKey: GAME_ID,
         gameTitle: 'Laevade pommitamine',
         emoji: '🚢',
         rulesHtml: RULES_HTML,
@@ -262,7 +263,7 @@ export function mountBattleship(container: HTMLElement, setTitle: (t: string) =>
     renderStatus();
   }
 
-  const saved = loadGame<BattleshipPuzzle, PlayState>(GAME_ID);
+  const saved = loadGame<BattleshipPuzzle, PlayState, Difficulty>(GAME_ID);
   if (saved) startGame(saved.difficulty, saved);
   else showPicker();
 

@@ -330,3 +330,24 @@ export function solvableWithSimpleTechniques(puzzle: StarBattlePuzzle): boolean 
     for (const a of step.assignments) state[a.r][a.c] = a.value;
   }
 }
+
+/**
+ * Rough difficulty score: solve from scratch with the hint engine and count
+ * how often the simple techniques run dry and a real deduction is needed
+ * (a contradiction chain counts 1, a deeper multi-unit one counts 3). On
+ * 9×9 two-star boards this ranges from under 10 to mid-30s, which is what
+ * the hardest tiers select on.
+ */
+export function difficultyScore(puzzle: StarBattlePuzzle): number {
+  const { n } = puzzle;
+  const state: PlayState = Array.from({ length: n }, () => Array(n).fill(UNKNOWN));
+  let score = 0;
+  for (;;) {
+    const step = getStarBattleHint(puzzle, state);
+    if (!step) break;
+    if (step.title === 'Loogiline tuletus') score += 1;
+    else if (step.title === 'Keerulisem tuletus') score += 3;
+    for (const a of step.assignments) state[a.r][a.c] = a.value;
+  }
+  return score;
+}

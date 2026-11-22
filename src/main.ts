@@ -7,6 +7,7 @@ import { tentsGame } from './games/tents';
 import { starBattleGame } from './games/starbattle';
 import { battleshipGame } from './games/battleship';
 import { slitherlinkGame } from './games/slitherlink';
+import { nonogramGame } from './games/nonogram';
 
 const games: GameDef[] = [
   sudokuGame,
@@ -14,6 +15,7 @@ const games: GameDef[] = [
   starBattleGame,
   battleshipGame,
   slitherlinkGame,
+  nonogramGame,
 ];
 
 const app = document.getElementById('app')!;

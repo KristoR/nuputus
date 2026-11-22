@@ -1,6 +1,6 @@
-import type { Difficulty } from '../../lib/types';
+import type { Level } from '../../lib/types';
 import { type RegionGrid, type StarBattlePuzzle } from './core';
-import { solvableWithSimpleTechniques } from './hints';
+import { difficultyScore, solvableWithSimpleTechniques } from './hints';
 import { solveStarBattle } from './solve';
 
 export type StarCount = 1 | 2;
@@ -11,15 +11,28 @@ export type StarCount = 1 | 2;
 // stops converging within a reasonable number of attempts — empirically,
 // generation past these sizes essentially never lands on a unique
 // solution quickly enough to stay usable.
-const SIZE: Record<StarCount, Record<Difficulty, number>> = {
-  1: { lihtne: 6, keskmine: 7, raske: 9 },
-  2: { lihtne: 8, keskmine: 9, raske: 9 },
+// 10×10 was measured and rejected: a 2-star 10×10 takes 2-25 s to
+// generate and often needs deductions the hint engine can't explain, so
+// "ekspert" stays at 9×9 and gets harder by selection instead (below).
+const SIZE: Record<StarCount, Record<Level, number>> = {
+  1: { lihtne: 6, keskmine: 7, raske: 9, ekspert: 9 },
+  2: { lihtne: 8, keskmine: 9, raske: 9, ekspert: 9 },
 };
 
-// "Raske" additionally requires that simple techniques alone can't finish
-// the puzzle, so the hardest tier is guaranteed to need real reasoning
+// "Raske" and "ekspert" additionally require that simple techniques alone
+// can't finish the puzzle, so they're guaranteed to need real reasoning
 // rather than just happening to land on a bigger grid.
-const REQUIRE_HARD: Record<Difficulty, boolean> = { lihtne: false, keskmine: false, raske: true };
+const REQUIRE_HARD: Record<Level, boolean> = { lihtne: false, keskmine: false, raske: true, ekspert: true };
+
+// Among puzzles that pass the above, difficulty still varies a lot (see
+// difficultyScore). Harder tiers keep generating until a candidate scores
+// at least this much, or the time budget runs out (then the hardest
+// candidate seen so far is used).
+const MIN_SCORE: Record<StarCount, Record<Level, number>> = {
+  1: { lihtne: 0, keskmine: 0, raske: 0, ekspert: 6 },
+  2: { lihtne: 0, keskmine: 0, raske: 14, ekspert: 28 },
+};
+const TIME_BUDGET_MS: Record<Level, number> = { lihtne: 0, keskmine: 0, raske: 2500, ekspert: 7000 };
 
 function mulberry32(seed: number) {
   return function () {
@@ -96,18 +109,46 @@ function tryGenerate(n: number, stars: number, requireHard: boolean, rng: () => 
   return puzzle;
 }
 
-export function generateStarBattle(difficulty: Difficulty, stars: StarCount, seed = Date.now()): StarBattlePuzzle {
-  const n = SIZE[stars][difficulty];
-  const requireHard = REQUIRE_HARD[difficulty];
-  const rng = mulberry32(seed);
-  for (let i = 0; i < 15000; i++) {
+function generateCandidate(n: number, stars: StarCount, requireHard: boolean, rng: () => number): StarBattlePuzzle {
+  for (let i = 0; i < 30000; i++) {
     const result = tryGenerate(n, stars, requireHard, rng);
     if (result) return result;
   }
-  const fallbackRng = mulberry32(Date.now() + 7);
-  for (let i = 0; i < 15000; i++) {
-    const result = tryGenerate(n, stars, requireHard, fallbackRng);
-    if (result) return result;
-  }
   throw new Error('Tähesõja mõistatuse loomine ebaõnnestus.');
+}
+
+export function generateStarBattle(difficulty: Level, stars: StarCount, seed = Date.now()): StarBattlePuzzle {
+  return generateCandidate(SIZE[stars][difficulty], stars, REQUIRE_HARD[difficulty], mulberry32(seed));
+}
+
+/**
+ * Like generateStarBattle, but for tiers with a minimum difficulty score it
+ * keeps generating candidates and returns the first that meets it (or the
+ * hardest one found within the time budget). Yields to the event loop
+ * between candidates so the loading message stays responsive.
+ */
+export async function generateStarBattleAsync(
+  difficulty: Level,
+  stars: StarCount,
+  onProgress?: (tried: number, best: number) => void,
+  seed = Date.now(),
+): Promise<StarBattlePuzzle> {
+  const n = SIZE[stars][difficulty];
+  const requireHard = REQUIRE_HARD[difficulty];
+  const minScore = MIN_SCORE[stars][difficulty];
+  const rng = mulberry32(seed);
+  const start = Date.now();
+  let best: StarBattlePuzzle | null = null;
+  let bestScore = -1;
+  for (let tried = 1; ; tried++) {
+    const candidate = generateCandidate(n, stars, requireHard, rng);
+    const score = minScore > 0 ? difficultyScore(candidate) : 0;
+    if (score > bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+    if (bestScore >= minScore || Date.now() - start > TIME_BUDGET_MS[difficulty]) return best!;
+    onProgress?.(tried, bestScore);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
 }

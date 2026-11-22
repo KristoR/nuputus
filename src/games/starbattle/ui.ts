@@ -1,12 +1,13 @@
 import { el, clear } from '../../lib/dom';
-import type { Difficulty } from '../../lib/types';
+import type { Level } from '../../lib/types';
 import { attachPrimarySecondary, difficultyLabel, renderDifficultyPicker, renderHintPanel, renderMessage, toolbarButton } from '../../lib/ui-helpers';
-import { clearGame, loadGame, saveGame } from '../../lib/persist';
+import { clearGame, loadGame, loadPref, savePref, saveGame } from '../../lib/persist';
 import { EMPTY, STAR, UNKNOWN, emptyPlay, type PlayState, type StarBattlePuzzle } from './core';
-import { generateStarBattle, type StarCount } from './generate';
+import { generateStarBattleAsync, type StarCount } from './generate';
 import { getStarBattleHint, type StarBattleDeduction } from './hints';
 
 const GAME_ID = 'starbattle';
+const LEVELS: Level[] = ['lihtne', 'keskmine', 'raske', 'ekspert'];
 
 function rulesHtml(stars: number | null): string {
   const goal =
@@ -32,7 +33,7 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
 
   function showPicker() {
     clear(root);
-    let stars: StarCount = 1;
+    let stars: StarCount = loadPref(GAME_ID + ':stars') === '1' ? 1 : 2;
 
     const starButtons = ([1, 2] as StarCount[]).map((s) => {
       const btn = el('button', { class: `pill-btn${s === stars ? ' active' : ''}` }, [
@@ -40,6 +41,7 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
       ]);
       btn.addEventListener('click', () => {
         stars = s;
+        savePref(GAME_ID + ':stars', String(s));
         starRow.querySelectorAll('.pill-btn').forEach((p) => p.classList.remove('active'));
         btn.classList.add('active');
       });
@@ -52,21 +54,34 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
         gameTitle: 'Tähesõda',
         emoji: '⭐',
         rulesHtml: rulesHtml(null),
+        levels: LEVELS,
+        initial: 'ekspert',
+        prefKey: GAME_ID,
         extra: starRow,
         onStart: (d) => startGame(d, stars),
       }),
     );
   }
 
-  function startGame(difficulty: Difficulty, starCount: StarCount) {
-    // 2-star puzzles can take up to ~2s to generate; show a loading state
-    // and defer the heavy work a tick so the message actually paints first.
+  let generation = 0;
+
+  function startGame(difficulty: Level, starCount: StarCount) {
+    // Harder tiers search through several candidates for a hard enough one
+    // (several seconds on a phone); show progress, and ignore the result if
+    // the player has left this screen in the meantime.
     clear(root);
-    root.append(el('p', { class: 'rules-box' }, ['Genereerin mõistatust...']));
-    window.setTimeout(() => buildGame(generateStarBattle(difficulty, starCount), difficulty), 10);
+    const loading = el('p', { class: 'rules-box' }, ['Genereerin mõistatust...']);
+    root.append(loading);
+    const myGeneration = ++generation;
+    window.setTimeout(async () => {
+      const puzzle = await generateStarBattleAsync(difficulty, starCount, (tried) => {
+        loading.textContent = `Otsin piisavalt rasket mõistatust... (${tried} kandidaati läbi vaadatud)`;
+      });
+      if (myGeneration === generation) buildGame(puzzle, difficulty);
+    }, 10);
   }
 
-  function buildGame(puzzle: StarBattlePuzzle, difficulty: Difficulty, resumeState?: PlayState) {
+  function buildGame(puzzle: StarBattlePuzzle, difficulty: Level, resumeState?: PlayState) {
     const { n, stars, regions, solution } = puzzle;
     const state: PlayState = resumeState ?? emptyPlay(n);
     let hint: StarBattleDeduction | null = null;
@@ -283,5 +298,7 @@ export function mountStarBattle(container: HTMLElement, setTitle: (t: string) =>
   if (saved) buildGame(saved.puzzle, saved.difficulty, saved.state);
   else showPicker();
 
-  return () => {};
+  return () => {
+    generation++;
+  };
 }

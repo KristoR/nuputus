@@ -24,6 +24,7 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
     clear(root);
     root.append(
       renderDifficultyPicker({
+        prefKey: GAME_ID,
         gameTitle: 'Telklaager',
         emoji: '⛺',
         rulesHtml: RULES_HTML,
@@ -246,7 +247,7 @@ export function mountTents(container: HTMLElement, setTitle: (t: string) => void
     renderStatus();
   }
 
-  const saved = loadGame<TentsPuzzle, PlayState>(GAME_ID);
+  const saved = loadGame<TentsPuzzle, PlayState, Difficulty>(GAME_ID);
   if (saved) startGame(saved.difficulty, saved);
   else showPicker();
 
