@@ -2,6 +2,9 @@ export type Difficulty = 'lihtne' | 'keskmine' | 'raske';
 
 export const DIFFICULTIES: Difficulty[] = ['lihtne', 'keskmine', 'raske'];
 
+/** Difficulty plus an optional extra-hard tier that only some games offer. */
+export type Level = Difficulty | 'ekspert';
+
 export interface HintStep {
   /** Short title of the technique, e.g. "Ainus võimalus" */
   title: string;

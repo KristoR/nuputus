@@ -29,6 +29,7 @@ export function mountSudoku(container: HTMLElement, setTitle: (t: string) => voi
     clear(root);
     root.append(
       renderDifficultyPicker({
+        prefKey: GAME_ID,
         gameTitle: 'Sudoku',
         emoji: '🔢',
         rulesHtml: RULES_HTML,
@@ -286,7 +287,7 @@ export function mountSudoku(container: HTMLElement, setTitle: (t: string) => voi
     };
   }
 
-  const saved = loadGame<SudokuPuzzle, Board>(GAME_ID);
+  const saved = loadGame<SudokuPuzzle, Board, Difficulty>(GAME_ID);
   if (saved) startGame(saved.difficulty, saved);
   else showPicker();
 

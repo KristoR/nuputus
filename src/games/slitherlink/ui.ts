@@ -38,6 +38,7 @@ export function mountSlitherlink(container: HTMLElement, setTitle: (t: string) =
     clear(root);
     root.append(
       renderDifficultyPicker({
+        prefKey: GAME_ID,
         gameTitle: 'Hiina müür',
         emoji: '🧱',
         rulesHtml: RULES_HTML,
@@ -302,7 +303,7 @@ export function mountSlitherlink(container: HTMLElement, setTitle: (t: string) =
     renderStatus();
   }
 
-  const saved = loadGame<SlitherlinkPuzzle, EdgeState>(GAME_ID);
+  const saved = loadGame<SlitherlinkPuzzle, EdgeState, Difficulty>(GAME_ID);
   if (saved) startGame(saved.difficulty, saved);
   else showPicker();
 

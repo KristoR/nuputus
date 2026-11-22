@@ -1,29 +1,39 @@
 import { el } from './dom';
-import type { Difficulty, HintStep } from './types';
+import type { Difficulty, HintStep, Level } from './types';
 import { DIFFICULTIES } from './types';
+import { loadPref, savePref } from './persist';
 
-const DIFFICULTY_LABEL: Record<Difficulty, string> = {
+const DIFFICULTY_LABEL: Record<Level, string> = {
   lihtne: 'Lihtne',
   keskmine: 'Keskmine',
   raske: 'Raske',
+  ekspert: 'Ekspert',
 };
 
-export function difficultyLabel(d: Difficulty): string {
+export function difficultyLabel(d: Level): string {
   return DIFFICULTY_LABEL[d];
 }
 
-export function renderDifficultyPicker(opts: {
+export function renderDifficultyPicker<D extends Level = Difficulty>(opts: {
   gameTitle: string;
   emoji: string;
   rulesHtml: string;
-  onStart: (d: Difficulty) => void;
-  initial?: Difficulty;
+  onStart: (d: D) => void;
+  /** Levels offered, in order. Defaults to the three standard difficulties. */
+  levels?: D[];
+  /** Used when no remembered choice exists. */
+  initial?: D;
+  /** When set, the last started level is remembered under this key and preselected next time. */
+  prefKey?: string;
   /** Extra control (e.g. a variant toggle) shown between the difficulty pills and the start button. */
   extra?: HTMLElement;
 }): HTMLElement {
-  let selected: Difficulty = opts.initial ?? 'lihtne';
+  const levels = opts.levels ?? (DIFFICULTIES as D[]);
+  const remembered = opts.prefKey ? loadPref(opts.prefKey) : null;
+  let selected: D =
+    levels.find((l) => l === remembered) ?? opts.initial ?? levels[0];
 
-  const pills = DIFFICULTIES.map((d) => {
+  const pills = levels.map((d) => {
     const btn = el('button', { class: `pill-btn${d === selected ? ' active' : ''}` }, [
       difficultyLabel(d),
     ]);
@@ -36,7 +46,10 @@ export function renderDifficultyPicker(opts: {
   });
 
   const startBtn = el('button', { class: 'primary-btn' }, ['Alusta mängu']);
-  startBtn.addEventListener('click', () => opts.onStart(selected));
+  startBtn.addEventListener('click', () => {
+    if (opts.prefKey) savePref(opts.prefKey, selected);
+    opts.onStart(selected);
+  });
 
   const rulesBox = el('details', { class: 'rules-box' });
   rulesBox.append(el('summary', {}, [`${opts.emoji} Kuidas mängida`]));

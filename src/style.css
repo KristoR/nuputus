@@ -598,6 +598,78 @@ footer.app-footer {
 
 .battleship-clue.corner { background: transparent; }
 
+/* ---------- Nonogram (Jaapani mõistatus) ---------- */
+.nonogram-grid {
+  /* One "unit" = one cell; clue numbers take one unit each. */
+  --u: min(36px, calc(min(94vw, 620px) / var(--units)));
+  display: grid;
+  grid-template-columns: calc(var(--u) * var(--clue-cols)) repeat(var(--board-cols), var(--u));
+  grid-template-rows: calc(var(--u) * var(--clue-rows)) repeat(var(--board-rows), var(--u));
+  font-family: system-ui, sans-serif;
+  font-size: calc(var(--u) * 0.56);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.nonogram-corner { border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); }
+
+.nonogram-colclue,
+.nonogram-rowclue {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--ink);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.nonogram-colclue {
+  flex-direction: column;
+  border-bottom: 2px solid var(--ink);
+  border-right: 1px solid var(--paper-line);
+  padding-bottom: 0.15em;
+  gap: 0.18em;
+}
+.nonogram-colclue.alt { background: rgba(47, 93, 98, 0.07); }
+
+.nonogram-rowclue {
+  border-right: 2px solid var(--ink);
+  border-bottom: 1px solid var(--paper-line);
+  padding-right: 0.3em;
+}
+.nonogram-rowclue span { width: var(--u); text-align: center; }
+.nonogram-rowclue.alt { background: rgba(47, 93, 98, 0.07); }
+
+.nonogram-colclue.done,
+.nonogram-rowclue.done { color: var(--ink-faint); }
+
+.nonogram-colclue.thick-right { border-right: 2px solid var(--ink); }
+.nonogram-rowclue.thick-bottom { border-bottom: 2px solid var(--ink); }
+
+.nonogram-cell {
+  background: var(--paper-card);
+  border-right: 1px solid var(--paper-line);
+  border-bottom: 1px solid var(--paper-line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.nonogram-cell.thick-right { border-right: 2px solid var(--ink); }
+.nonogram-cell.thick-bottom { border-bottom: 2px solid var(--ink); }
+.nonogram-cell.edge-right { border-right: 2px solid var(--ink); }
+.nonogram-cell.edge-bottom { border-bottom: 2px solid var(--ink); }
+.nonogram-cell.filled { background: var(--ink); }
+.nonogram-cell.dot::after { content: '•'; color: var(--ink-faint); pointer-events: none; }
+.nonogram-cell.hint-primary { box-shadow: inset 0 0 0 3px #c98a2b; }
+.nonogram-cell.error { box-shadow: inset 0 0 0 3px var(--bad); }
+.nonogram-cell.solved.dot::after { content: ''; }
+.nonogram-cell.solved { cursor: default; }
+
+.nonogram-tools { justify-content: center; }
+
 /* ---------- Slitherlink ---------- */
 .board-wrap svg text {
   user-select: none;
