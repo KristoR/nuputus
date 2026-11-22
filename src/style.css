@@ -598,6 +598,17 @@ footer.app-footer {
 
 .battleship-clue.corner { background: transparent; }
 
+/* ---------- Brush tool picker (nonogram, star battle) ---------- */
+.brush-toolbar { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
+.brush-tools { justify-content: center; }
+.brush-tip {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  font-family: system-ui, sans-serif;
+  text-align: center;
+}
+
 /* ---------- Nonogram (Jaapani mõistatus) ---------- */
 .nonogram-grid {
   /* One "unit" = one cell; clue numbers take one unit each. */
@@ -668,7 +679,6 @@ footer.app-footer {
 .nonogram-cell.solved.dot::after { content: ''; }
 .nonogram-cell.solved { cursor: default; }
 
-.nonogram-tools { justify-content: center; }
 
 /* ---------- Slitherlink ---------- */
 .board-wrap svg text {
